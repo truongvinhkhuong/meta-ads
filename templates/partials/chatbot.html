@@ -3,9 +3,14 @@
 </button>
 
 <div id="chatbot-container" class="chatbot-container bg-white rounded-lg shadow-lg w-80">
-    <div class="text-white px-4 py-3 rounded-t-lg btn-primary">
-        <h3 class="font-medium">Facebook Ads Assistant</h3>
-        <p class="text-sm opacity-90">Hỏi tôi về dữ liệu quảng cáo</p>
+    <div class="text-white px-4 py-3 rounded-t-lg btn-primary flex justify-between items-center">
+        <div>
+            <h3 class="font-medium">Facebook Ads Assistant</h3>
+            <p class="text-sm opacity-90">Hỏi tôi về dữ liệu quảng cáo</p>
+        </div>
+        <button id="chatbot-clear" class="text-white opacity-70 hover:opacity-100 text-sm" title="Xóa lịch sử">
+            Clear
+        </button>
     </div>
     <div class="p-4">
         <div id="chatbot-messages" class="chatbot-messages mb-4">
@@ -15,11 +20,14 @@
             <input type="text" id="chatbot-input" placeholder="Nhập câu hỏi..." class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none">
             <button id="chatbot-send" class="px-4 py-2 text-white rounded-md btn-primary">Gửi</button>
         </div>
-        <div class="mt-3 grid grid-cols-2 gap-2">
-            <button class="px-3 py-2 text-sm rounded border" style="border-color:#247ba0;color:#247ba0;" data-suggest="Tóm tắt hiệu suất 7 ngày qua của campaign đang xem">Tóm tắt 7 ngày</button>
-            <button class="px-3 py-2 text-sm rounded border" style="border-color:#247ba0;color:#247ba0;" data-suggest="Tìm ngày có chi tiêu bất thường và giải thích">Tìm outlier</button>
-            <button class="px-3 py-2 text-sm rounded border" style="border-color:#247ba0;color:#247ba0;" data-suggest="Đề xuất 3 hành động để giảm CPM 15% dựa trên dữ liệu">Gợi ý tối ưu</button>
-            <button class="px-3 py-2 text-sm rounded border" style="border-color:#247ba0;color:#247ba0;" data-suggest="Top 3 placement hiệu quả nhất theo impressions và CPC">Top placement</button>
+        <div class="mt-3 space-y-2">
+            <div class="text-xs text-gray-500 mb-2">Câu hỏi gợi ý:</div>
+            <div class="grid grid-cols-1 gap-2">
+                <button class="px-3 py-2 text-sm rounded border hover:bg-blue-50 transition-colors" style="border-color:#247ba0;color:#247ba0;" data-suggest="Tóm tắt hiệu suất tổng quan của tất cả campaigns trong 7 ngày qua">Tóm tắt hiệu suất 7 ngày</button>
+                <button class="px-3 py-2 text-sm rounded border hover:bg-blue-50 transition-colors" style="border-color:#247ba0;color:#247ba0;" data-suggest="Phân tích xu hướng CTR và CPC, tìm ngày có performance bất thường">Phân tích xu hướng</button>
+                <button class="px-3 py-2 text-sm rounded border hover:bg-blue-50 transition-colors" style="border-color:#247ba0;color:#247ba0;" data-suggest="Đề xuất 3 hành động cụ thể để tối ưu hiệu suất quảng cáo dựa trên dữ liệu hiện tại">Gợi ý tối ưu</button>
+                <button class="px-3 py-2 text-sm rounded border hover:bg-blue-50 transition-colors" style="border-color:#247ba0;color:#247ba0;" data-suggest="So sánh performance của các campaigns và đưa ra nhận xét">So sánh campaigns</button>
+            </div>
         </div>
     </div>
 </div>

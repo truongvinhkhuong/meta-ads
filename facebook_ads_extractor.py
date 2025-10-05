@@ -16,10 +16,13 @@ class FacebookAdsExtractor:
     
     def __init__(self):
         load_dotenv()
-        self.access_token = os.getenv('USER_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN')
-        self.skip_insights = (os.getenv('SKIP_INSIGHTS', 'true').lower() in ['1', 'true', 'yes'])
+        # Sử dụng User Token cho ad accounts, Page Token cho insights
+        self.user_token = os.getenv('USER_TOKEN') or os.getenv('FACEBOOK_ACCESS_TOKEN')
+        self.page_token = os.getenv('PAGE_ACCESS_TOKEN')
+        self.access_token = self.user_token  # Default cho ad accounts
+        self.skip_insights = (os.getenv('SKIP_INSIGHTS', 'false').lower() in ['1', 'true', 'yes'])
         self.account_ids = os.getenv('FACEBOOK_ACCOUNT_IDS', '').split(',')
-        self.base_url = "https://graph.facebook.com/v23.0"
+        self.base_url = "https://graph.facebook.com/v21.0"
         self._page_cache = {}
         
         if not self.access_token:
@@ -125,26 +128,32 @@ class FacebookAdsExtractor:
     def get_campaign_insights(self, account_id: str, campaign_id: str, start_date: str = "2023-01-01") -> Dict[str, Any]:
         try:
             url = f"{self.base_url}/{campaign_id}/insights"
+            # Sử dụng page token cho insights nếu có
+            token = self.page_token or self.access_token
             params = {
-                'access_token': self.access_token,
+                'access_token': token,
                 'level': 'campaign',
-                'fields': 'campaign_name,impressions,clicks,spend,ctr,cpc,cpm,reach,frequency,actions,inline_link_clicks,inline_link_click_ctr,unique_inline_link_clicks,video_play_actions,video_3_sec_watched_actions,video_10_sec_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_avg_time_watched_actions',
-                'date_preset': 'custom',
-                'since': start_date,
-                'until': date.today().isoformat(),
+                'fields': 'campaign_name,impressions,clicks,spend,ctr,cpc,cpm,reach,frequency',
+                'date_preset': 'maximum',  # Sử dụng maximum thay vì custom để lấy tất cả dữ liệu có sẵn
                 'time_increment': 1
             }
             
+            logger.info(f"Lấy insights cho campaign {campaign_id}")
             response = requests.get(url, params=params)
             response.raise_for_status()
             
-            insights = response.json().get('data', [])
+            data = response.json()
+            insights = data.get('data', [])
+            
             if insights:
+                logger.info(f"Tìm thấy {len(insights)} insights cho campaign {campaign_id}")
                 return insights[0]
-            return {}
+            else:
+                logger.warning(f"Không có insights data cho campaign {campaign_id}")
+                return {}
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Lỗi khi lấy insights: {e}")
+            logger.error(f"Lỗi khi lấy insights cho campaign {campaign_id}: {e}")
             return {}
     
     def extract_all_data(self, start_date: str = "2023-01-01") -> Dict[str, Any]:
@@ -179,9 +188,13 @@ class FacebookAdsExtractor:
                 if page_info:
                     campaign_data.update(page_info)
                 
-                if not self.skip_insights and campaign.get('status') == 'ACTIVE':
+                if not self.skip_insights:
+                    # Lấy insights cho cả ACTIVE và PAUSED campaigns
+                    # vì campaigns PAUSED vẫn có thể có dữ liệu lịch sử
+                    logger.info(f"Đang lấy insights cho campaign {campaign['id']} - {campaign.get('name', 'Unknown')}")
                     insights = self.get_campaign_insights(account_id, campaign['id'], start_date)
                     campaign_data['insights'] = insights
+                    logger.info(f"Kết quả insights cho campaign {campaign['id']}: {len(insights) if insights else 0} fields")
                 
                 all_data['campaigns'].append(campaign_data)
         

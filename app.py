@@ -6,7 +6,7 @@ import logging
 import hashlib
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from flask import Flask, request, jsonify, render_template
 
 from dotenv import load_dotenv
@@ -307,19 +307,145 @@ class OpenAIChatbot:
         
         return optimized
     
+    def _build_context_summary(self, context: Dict[str, Any]) -> str:
+        """Xây dựng tóm tắt ngữ cảnh dashboard"""
+        summary_parts = []
+        
+        # Thông tin cơ bản
+        campaigns_count = context.get('campaigns_count', 0)
+        extraction_date = context.get('extraction_date')
+        summary_parts.append(f"**Tổng quan:** {campaigns_count} campaigns")
+        
+        if extraction_date:
+            summary_parts.append(f"**Dữ liệu cập nhật:** {extraction_date}")
+        
+        # Kiểm tra xem có dữ liệu insights không
+        has_insights_data = False
+        campaigns_with_insights = context.get('campaigns_with_insights', 0)
+        
+        if campaigns_with_insights > 0:
+            has_insights_data = True
+            summary_parts.append(f"**Dữ liệu insights:** {campaigns_with_insights}/{context.get('campaigns_count', 0)} campaigns")
+            
+            # Thông tin từ TẤT CẢ campaigns có insights
+            all_campaigns = context.get('all_campaigns', [])
+            campaigns_without_insights = context.get('campaigns_without_insights', 0)
+            
+            if all_campaigns:
+                total_spend = sum(float(c.get('insights', {}).get('spend', 0)) for c in all_campaigns)
+                total_impressions = sum(int(float(c.get('insights', {}).get('impressions', 0))) for c in all_campaigns)
+                total_clicks = sum(int(float(c.get('insights', {}).get('clicks', 0))) for c in all_campaigns)
+                
+                summary_parts.append(f"**Tổng chi tiêu ({len(all_campaigns)} campaigns):** ${total_spend:,.0f}")
+                summary_parts.append(f"**Tổng impressions:** {total_impressions:,}")
+                summary_parts.append(f"**Tổng clicks:** {total_clicks:,}")
+                
+                # Tính CTR và CPC trung bình
+                if total_impressions > 0:
+                    avg_ctr = (total_clicks / total_impressions) * 100
+                    summary_parts.append(f"**CTR trung bình:** {avg_ctr:.2f}%")
+                
+                if total_clicks > 0:
+                    avg_cpc = total_spend / total_clicks
+                    summary_parts.append(f"**CPC trung bình:** ${avg_cpc:,.0f}")
+                
+                # Thêm thông tin về campaigns không có insights
+                if campaigns_without_insights > 0:
+                    summary_parts.append(f"**{campaigns_without_insights} campaigns chưa có dữ liệu insights**")
+        
+        # Thông tin campaigns gần đây (fallback)
+        recent_campaigns = context.get('recent_campaigns', [])
+        if recent_campaigns and not has_insights_data:
+            campaigns_with_data = [c for c in recent_campaigns if c.get('spend', 0) > 0 or c.get('impressions', 0) > 0]
+            if campaigns_with_data:
+                has_insights_data = True
+                total_spend = sum(c.get('spend', 0) for c in campaigns_with_data)
+                total_impressions = sum(c.get('impressions', 0) for c in campaigns_with_data)
+                summary_parts.append(f"**Chi tiêu {len(campaigns_with_data)} campaigns có dữ liệu:** ${total_spend:,.2f}")
+                summary_parts.append(f"**Tổng impressions:** {total_impressions:,}")
+            else:
+                summary_parts.append(f"**Lưu ý:** {len(recent_campaigns)} campaigns nhưng chưa có dữ liệu insights")
+        
+        # Dữ liệu daily gần đây
+        daily_data = context.get('daily_data', [])
+        if daily_data:
+            has_insights_data = True
+            recent_spend = sum(d.get('spend', 0) for d in daily_data[-3:])  # 3 ngày gần nhất
+            avg_ctr = sum(d.get('ctr', 0) for d in daily_data) / len(daily_data) if daily_data else 0
+            summary_parts.append(f"**Chi tiêu 3 ngày gần:** ${recent_spend:,.2f}")
+            summary_parts.append(f"**CTR trung bình:** {avg_ctr:.2f}%")
+        
+        # Thông báo nếu không có dữ liệu insights
+        if not has_insights_data and campaigns_count > 0:
+            summary_parts.append(f"**Tình trạng:** Không có dữ liệu insights cho các campaigns. Có thể do:")
+            summary_parts.append(f"   • Tất cả campaigns đều PAUSED và chưa từng chạy")
+            summary_parts.append(f"   • Token không có quyền truy cập insights")
+            summary_parts.append(f"   • Cần refresh dữ liệu để lấy insights")
+        
+        # Filters hiện tại
+        current_filters = context.get('current_filters', {})
+        if current_filters:
+            filter_parts = []
+            if current_filters.get('date_range'):
+                filter_parts.append(f"Khoảng thời gian: {current_filters['date_range']}")
+            if current_filters.get('metric_focus'):
+                filter_parts.append(f"Metric focus: {current_filters['metric_focus']}")
+            if filter_parts:
+                summary_parts.append(f"**Filters:** {', '.join(filter_parts)}")
+        
+        return "\n".join(summary_parts) if summary_parts else "Không có dữ liệu context"
+    
+    def _build_conversation_context(self, conversation_history: List[Dict[str, Any]]) -> str:
+        """Xây dựng ngữ cảnh cuộc trò chuyện"""
+        if not conversation_history:
+            return "Chưa có lịch sử cuộc trò chuyện"
+        
+        context_parts = []
+        for item in conversation_history[-3:]:  # Chỉ lấy 3 cuộc trò chuyện gần nhất
+            if item.get('type') == 'user':
+                context_parts.append(f"Hỏi: {item.get('question', '')}")
+            elif item.get('type') == 'bot':
+                # Chỉ lấy 100 ký tự đầu của câu trả lời để tránh quá dài
+                answer = item.get('answer', '')
+                if len(answer) > 100:
+                    answer = answer[:100] + "..."
+                context_parts.append(f"Trả lời: {answer}")
+        
+        return "\n".join(context_parts)
+    
     def ask_question(self, question: str, context: Dict[str, Any]) -> str:
         if not self.api_key:
             return "Xin lỗi, API key chưa được cấu hình. Vui lòng kiểm tra cài đặt."
         
         try:
+            # Xây dựng context phong phú hơn
+            context_summary = self._build_context_summary(context)
+            conversation_context = self._build_conversation_context(context.get('conversation_history', []))
+            
             system_prompt = (
-                "Bạn là chuyên gia phân tích Facebook Ads. Chỉ trả lời dựa trên dữ liệu được cung cấp, "
-                "không suy diễn hoặc bịa thêm. Nếu dữ liệu không đủ, hãy nói 'chưa đủ dữ liệu'."
+                "Bạn là chuyên gia phân tích Facebook Ads với 10+ năm kinh nghiệm. "
+                "Nhiệm vụ của bạn:\n"
+                "1. Phân tích dữ liệu quảng cáo một cách chính xác và sâu sắc\n"
+                "2. Đưa ra insights có giá trị và đề xuất hành động cụ thể\n"
+                "3. Sử dụng ngôn ngữ tiếng Việt tự nhiên, thân thiện\n"
+                "4. Trả lời ngắn gọn nhưng đầy đủ thông tin\n"
+                "5. Highlight các số liệu quan trọng bằng **bold**\n"
+                "6. Nếu dữ liệu không đủ, hãy nói rõ và đề xuất cách lấy thêm dữ liệu\n\n"
+                "**QUAN TRỌNG:** Nếu dashboard không có dữ liệu insights (tất cả campaigns đều PAUSED hoặc không có metrics), "
+                "hãy:\n"
+                "• Giải thích rõ ràng tại sao không có dữ liệu\n"
+                "• Đưa ra hướng dẫn cụ thể để thu thập dữ liệu\n"
+                "• Đề xuất các bước để bắt đầu campaigns mới\n"
+                "• Cung cấp lời khuyên dựa trên best practices\n\n"
+                "Luôn bắt đầu bằng việc tóm tắt ngắn gọn tình hình hiện tại trước khi trả lời câu hỏi cụ thể."
             )
+            
             user_prompt = (
-                "Ngữ cảnh dashboard (JSON):\n" + json.dumps(context or {}, ensure_ascii=False, indent=2) +
-                "\n\nCâu hỏi: " + question +
-                "\n\nYêu cầu: trả lời ngắn gọn, gạch đầu dòng rõ ràng, đề xuất hành động nếu phù hợp."
+                f"**NGỮ CẢNH DASHBOARD:**\n{context_summary}\n\n"
+                f"**LỊCH SỬ CUỘC TRÒ CHUYỆN:**\n{conversation_context}\n\n"
+                f"**CÂU HỎI:** {question}\n\n"
+                "**YÊU CẦU:** Trả lời chi tiết, có insights và đề xuất hành động cụ thể. "
+                "Sử dụng format markdown để làm nổi bật thông tin quan trọng."
             )
             
             headers = {
@@ -328,12 +454,12 @@ class OpenAIChatbot:
             }
             
             data = {
-                'model': 'gpt-3.5-turbo',
+                'model': os.getenv('OPENAI_CHAT_MODEL', 'gpt-4o-mini'),
                 'messages': [
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_prompt}
                 ],
-                'max_tokens': 500,
+                'max_tokens': 800,
                 'temperature': 0.7
             }
             
@@ -343,7 +469,7 @@ class OpenAIChatbot:
             result = response.json()
             answer = result['choices'][0]['message']['content']
             
-            logger.info(f"OpenAI API response: {answer}")
+            logger.info(f"OpenAI API response: {answer[:200]}...")
             return answer
             
         except requests.exceptions.RequestException as e:
@@ -432,8 +558,26 @@ def ask_question():
         
         global_data = load_ads_data()
         if isinstance(context, dict):
-            context.setdefault('extraction_date', global_data.get('extraction_date'))
-            context.setdefault('campaigns_count', len(global_data.get('campaigns', [])))
+            # Ưu tiên dữ liệu từ frontend nếu có, fallback về global_data
+            context.setdefault('extraction_date', context.get('extraction_date') or global_data.get('extraction_date'))
+            context.setdefault('campaigns_count', context.get('campaigns_count') or len(global_data.get('campaigns', [])))
+            context.setdefault('campaigns_with_insights', context.get('campaigns_with_insights', 0))
+            context.setdefault('campaigns_without_insights', context.get('campaigns_without_insights', 0))
+            
+            # Thêm dữ liệu campaigns với insights từ global_data (fallback)
+            campaigns = global_data.get('campaigns', [])
+            campaigns_with_insights = [c for c in campaigns if c.get('insights')]
+            
+            # Nếu frontend chưa cung cấp all_campaigns, sử dụng dữ liệu từ global_data
+            if not context.get('all_campaigns_data') and campaigns_with_insights:
+                context.setdefault('all_campaigns', campaigns_with_insights)
+                context.setdefault('sample_campaigns', campaigns_with_insights[:20])
+            elif context.get('all_campaigns_data'):
+                # Sử dụng dữ liệu từ frontend, filter chỉ campaigns có insights
+                all_campaigns_data = context.get('all_campaigns_data', [])
+                campaigns_with_insights_from_frontend = [c for c in all_campaigns_data if c.get('insights')]
+                context.setdefault('all_campaigns', campaigns_with_insights_from_frontend)
+                context.setdefault('sample_campaigns', campaigns_with_insights_from_frontend[:20])
         
         chatbot = OpenAIChatbot()
         
@@ -456,6 +600,26 @@ def health_check():
         'timestamp': datetime.now().isoformat(),
         'openai_configured': bool(os.getenv('OPENAI_API_KEY'))
     })
+
+@app.route('/api/debug-data')
+def debug_data():
+    """Debug endpoint để kiểm tra dữ liệu"""
+    try:
+        data = load_ads_data()
+        campaigns_with_insights = [c for c in data.get('campaigns', []) if c.get('insights')]
+        
+        return jsonify({
+            'total_campaigns': len(data.get('campaigns', [])),
+            'campaigns_with_insights': len(campaigns_with_insights),
+            'extraction_date': data.get('extraction_date'),
+            'sample_campaign': campaigns_with_insights[0] if campaigns_with_insights else None,
+            'status': 'success'
+        })
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        })
 
 @app.route('/api/refresh', methods=['POST'])
 def refresh_data():

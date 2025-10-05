@@ -1,70 +1,301 @@
 // JavaScript for Chatbot functionality
 
-function initializeChatbot(){
-    const toggleBtn=document.getElementById('chatbot-toggle');
-    const container=document.getElementById('chatbot-container');
-    const input=document.getElementById('chatbot-input');
-    const sendBtn=document.getElementById('chatbot-send');
-    toggleBtn.addEventListener('click',()=>{ 
-        container.style.display=container.style.display==='none'?'block':'none'; 
-    });
-    
-    function buildContext(){
+class ChatbotManager {
+    constructor() {
+        this.conversationHistory = [];
+        this.isProcessing = false;
+        this.initializeElements();
+        this.bindEvents();
+    }
+
+    initializeElements() {
+        this.toggleBtn = document.getElementById('chatbot-toggle');
+        this.container = document.getElementById('chatbot-container');
+        this.input = document.getElementById('chatbot-input');
+        this.sendBtn = document.getElementById('chatbot-send');
+        this.clearBtn = document.getElementById('chatbot-clear');
+        this.messagesContainer = document.getElementById('chatbot-messages');
+        this.typingIndicator = null;
+    }
+
+    bindEvents() {
+        this.toggleBtn.addEventListener('click', () => this.toggleContainer());
+        this.sendBtn.addEventListener('click', () => this.sendMessage());
+        this.clearBtn.addEventListener('click', () => this.clearHistory());
+        
+        this.input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+        
+        // Nút gợi ý nhanh
+        document.querySelectorAll('[data-suggest]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const suggestion = btn.getAttribute('data-suggest');
+                this.sendMessage(suggestion);
+            });
+        });
+
+        // Auto-focus input khi mở chatbot
+        this.toggleBtn.addEventListener('click', () => {
+            setTimeout(() => {
+                if (this.container.style.display !== 'none') {
+                    this.input.focus();
+                }
+            }, 100);
+        });
+    }
+
+    toggleContainer() {
+        const isVisible = this.container.style.display !== 'none';
+        this.container.style.display = isVisible ? 'none' : 'block';
+        
+        if (!isVisible) {
+            this.input.focus();
+        }
+    }
+
+    buildContext() {
         // Lấy dữ liệu đang có trong trang làm context cho bot
-        const ctx={
-            campaigns_count: adsData?.campaigns?.length||0,
-            // Thêm dữ liệu daily gần nhất của biểu đồ nếu có
+        const campaigns = window.adsData?.campaigns || [];
+        const campaignsWithInsights = campaigns.filter(c => c.insights);
+        const campaignsWithoutInsights = campaigns.filter(c => !c.insights);
+        
+        const ctx = {
+            campaigns_count: campaigns.length,
+            campaigns_with_insights: campaignsWithInsights.length,
+            campaigns_without_insights: campaignsWithoutInsights.length,
+            extraction_date: window.adsData?.extraction_date,
+            current_page: window.location.pathname,
+            current_filters: this.getCurrentFilters(),
+            recent_campaigns: this.getRecentCampaigns(),
+            daily_data: this.getDailyData(),
+            conversation_history: this.conversationHistory.slice(-3), // Chỉ gửi 3 câu hỏi gần nhất
+            
+            // Thêm thông tin chi tiết về campaigns
+            all_campaigns_data: campaigns.map(c => ({
+                id: c.campaign_id || c.id,
+                name: c.campaign_name || c.name,
+                status: c.status,
+                objective: c.objective,
+                created_time: c.created_time,
+                start_time: c.start_time,
+                stop_time: c.stop_time,
+                insights: c.insights,
+                page_id: c.page_id,
+                page_name: c.page_name
+            }))
         };
         return ctx;
     }
     
-    function sendMessage(q){ 
-        if(!q){ q=input.value.trim(); } 
-        if(!q) return; 
-        addMessage(q,'user'); 
-        input.value=''; 
-        addMessage('Đang xử lý...','bot'); 
-        fetch('/api/ask',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-                question:q,
-                context:buildContext()
+    getCurrentFilters() {
+        // Lấy filter hiện tại từ dashboard
+        const filters = {};
+        try {
+            // Kiểm tra xem có global filters không
+            if (window.globalFilters) {
+                filters.date_range = window.globalFilters.dateRange;
+                filters.campaign_ids = window.globalFilters.campaignIds;
+                filters.metric_focus = window.globalFilters.metricFocus;
+            }
+            
+            // Lấy filter từ URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.forEach((value, key) => {
+                filters[key] = value;
+            });
+        } catch (e) {
+            console.warn('Không thể lấy filters:', e);
+        }
+        return filters;
+    }
+
+    getRecentCampaigns() {
+        try {
+            if (!window.adsData?.campaigns) return [];
+            
+            // Trả về TẤT CẢ campaigns thay vì chỉ 5 campaigns đầu
+            return window.adsData.campaigns.map(campaign => ({
+                id: campaign.campaign_id || campaign.id,
+                name: campaign.campaign_name || campaign.name,
+                status: campaign.status,
+                spend: campaign.insights?.spend ? parseFloat(campaign.insights.spend) : (campaign.summary_metrics?.total_spend || 0),
+                impressions: campaign.insights?.impressions ? parseInt(campaign.insights.impressions) : (campaign.summary_metrics?.total_impressions || 0),
+                clicks: campaign.insights?.clicks ? parseInt(campaign.insights.clicks) : (campaign.summary_metrics?.total_clicks || 0),
+                ctr: campaign.insights?.ctr ? parseFloat(campaign.insights.ctr) : (campaign.summary_metrics?.avg_ctr || 0),
+                cpc: campaign.insights?.cpc ? parseFloat(campaign.insights.cpc) : (campaign.summary_metrics?.avg_cpc || 0),
+                reach: campaign.insights?.reach ? parseInt(campaign.insights.reach) : 0,
+                frequency: campaign.insights?.frequency ? parseFloat(campaign.insights.frequency) : 0,
+                has_insights: !!campaign.insights
+            }));
+        } catch (e) {
+            console.warn('Không thể lấy recent campaigns:', e);
+            return [];
+        }
+    }
+
+    getDailyData() {
+        try {
+            // Lấy dữ liệu daily từ biểu đồ nếu có
+            if (window.dailyData && window.dailyData.length > 0) {
+                const recent = window.dailyData.slice(-7); // 7 ngày gần nhất
+                return recent.map(day => ({
+                    date: day.date,
+                    spend: day.spend || 0,
+                    impressions: day.impressions || 0,
+                    clicks: day.clicks || 0,
+                    ctr: day.ctr || 0,
+                    cpc: day.cpc || 0
+                }));
+            }
+            return [];
+        } catch (e) {
+            console.warn('Không thể lấy daily data:', e);
+            return [];
+        }
+    }
+
+    showTypingIndicator() {
+        this.typingIndicator = document.createElement('div');
+        this.typingIndicator.className = 'message bot-message typing-indicator';
+        this.typingIndicator.innerHTML = `
+            <div class="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <span class="typing-text">Đang phân tích...</span>
+        `;
+        this.messagesContainer.appendChild(this.typingIndicator);
+        this.scrollToBottom();
+    }
+
+    hideTypingIndicator() {
+        if (this.typingIndicator) {
+            this.typingIndicator.remove();
+            this.typingIndicator = null;
+        }
+    }
+
+    sendMessage(customQuestion = null) {
+        if (this.isProcessing) return;
+        
+        const question = customQuestion || this.input.value.trim();
+        if (!question) return;
+
+        this.isProcessing = true;
+        this.sendBtn.disabled = true;
+        this.input.disabled = true;
+
+        // Thêm câu hỏi vào lịch sử
+        this.conversationHistory.push({
+            question: question,
+            timestamp: new Date().toISOString(),
+            type: 'user'
+        });
+
+        // Hiển thị câu hỏi của user
+        this.addMessage(question, 'user');
+        this.input.value = '';
+        
+        // Hiển thị typing indicator
+        this.showTypingIndicator();
+
+        // Gửi request
+        fetch('/api/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question: question,
+                context: this.buildContext()
             })
         })
-        .then(r=>r.json())
-        .then(d=>{ 
-            removeLastMessage(); 
-            addMessage(d.error?('Lỗi: '+d.error):d.answer,'bot');
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
         })
-        .catch(()=>{ 
-            removeLastMessage(); 
-            addMessage('Lỗi kết nối.','bot');
-        }); 
+        .then(data => {
+            this.hideTypingIndicator();
+            
+            if (data.error) {
+                this.addMessage(`Lỗi: ${data.error}`, 'bot', 'error');
+            } else {
+                this.addMessage(data.answer, 'bot');
+                
+                // Thêm câu trả lời vào lịch sử
+                this.conversationHistory.push({
+                    answer: data.answer,
+                    timestamp: new Date().toISOString(),
+                    type: 'bot'
+                });
+            }
+        })
+        .catch(error => {
+            this.hideTypingIndicator();
+            console.error('Chatbot error:', error);
+            
+            let errorMessage = 'Lỗi kết nối. Vui lòng thử lại.';
+            if (error.message.includes('timeout')) {
+                errorMessage = 'Timeout. Vui lòng thử lại với câu hỏi ngắn hơn.';
+            } else if (error.message.includes('500')) {
+                errorMessage = 'Lỗi server. Vui lòng thử lại sau.';
+            }
+            
+            this.addMessage(`${errorMessage}`, 'bot', 'error');
+        })
+        .finally(() => {
+            this.isProcessing = false;
+            this.sendBtn.disabled = false;
+            this.input.disabled = false;
+            this.input.focus();
+        });
     }
-    
-    sendBtn.addEventListener('click',sendMessage); 
-    input.addEventListener('keypress',e=>{ 
-        if(e.key==='Enter') sendMessage(); 
-    });
-    
-    // Nút gợi ý nhanh
-    document.querySelectorAll('[data-suggest]').forEach(btn=>{ 
-        btn.addEventListener('click',()=> sendMessage(btn.getAttribute('data-suggest'))); 
-    });
+
+    addMessage(text, type, messageType = 'normal') {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}-message ${messageType === 'error' ? 'error-message' : ''}`;
+        
+        // Format message với markdown cơ bản
+        const formattedText = this.formatMessage(text);
+        messageDiv.innerHTML = formattedText;
+        
+        this.messagesContainer.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    formatMessage(text) {
+        // Basic markdown formatting
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>')
+            .replace(/(\d+%)/g, '<span class="highlight-metric">$1</span>')
+            .replace(/(\$\d+)/g, '<span class="highlight-money">$1</span>');
+    }
+
+    scrollToBottom() {
+        setTimeout(() => {
+            this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+        }, 100);
+    }
+
+    clearHistory() {
+        this.conversationHistory = [];
+        this.messagesContainer.innerHTML = `
+            <div class="message bot-message">
+                Xin chào! Hãy hỏi tôi bất kỳ câu hỏi nào về dữ liệu quảng cáo.
+            </div>
+        `;
+    }
 }
 
-function addMessage(text,type){ 
-    const box=document.getElementById('chatbot-messages'); 
-    const div=document.createElement('div'); 
-    div.className=`message ${type}-message`; 
-    div.textContent=text; 
-    box.appendChild(div); 
-    box.scrollTop=box.scrollHeight; 
+function initializeChatbot() {
+    window.chatbot = new ChatbotManager();
 }
 
-function removeLastMessage(){ 
-    const box=document.getElementById('chatbot-messages'); 
-    const msgs=box.querySelectorAll('.message'); 
-    if(msgs.length>0) msgs[msgs.length-1].remove(); 
-}
