@@ -7,10 +7,9 @@ function initializeDailyTracking() {
     // Initialize password protection
     initializePasswordProtection();
     
-    // Load initial data only if password is unlocked
-    if (isPasswordUnlocked) {
-        loadDailyTrackingData();
-    }
+    // Always start loading data in background so it's ready after unlock
+    // UI remains covered by overlay until password is validated
+    loadDailyTrackingData();
     
     // Event listeners
     document.getElementById('btn-refresh-daily').addEventListener('click', loadDailyTrackingData);
@@ -52,11 +51,7 @@ async function refreshBudgetCache() {
 
 async function loadDailyTrackingData(customParams = null) {
     try {
-        // Check if password is unlocked
-        if (!isPasswordUnlocked) {
-            console.log('Password not unlocked, skipping daily tracking data load');
-            return;
-        }
+        // Allow data to load even when locked; UI is gated by overlay
         
         let preset = 'last_7d';
         let url = '/api/daily-tracking';
@@ -406,8 +401,10 @@ function validatePassword() {
         // Hide overlay
         hidePasswordOverlay();
         
-        // Load data now that password is validated
-        loadDailyTrackingData();
+        // If data already preloaded, just render-ready; otherwise fetch now
+        if (!dailyTrackingData) {
+            loadDailyTrackingData();
+        }
         
         console.log('Daily tracking password validated successfully');
     } else {
