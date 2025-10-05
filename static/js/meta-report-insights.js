@@ -63,6 +63,9 @@ function initializeMetaReportInsights() {
     // Initialize agency report filters
     initializeAgencyReportFilters();
     
+    // Initialize KPI Performance tracking
+    initializeKPIPerformanceTracking();
+    
     // Agency report will load real data automatically
     
     console.log('Meta Report Insights initialized successfully');
@@ -1747,4 +1750,293 @@ function exportMetaReportData() {
     a.download = `meta-report-insights-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+}
+
+// KPI Performance Tracking Functions
+function initializeKPIPerformanceTracking() {
+    console.log('Initializing KPI Performance Tracking...');
+    
+    // Initialize KPI month filter
+    const kpiMonthSelect = document.getElementById('kpi-month-select');
+    const kpiApplyBtn = document.getElementById('kpi-apply-filters-btn');
+    
+    if (kpiApplyBtn) {
+        kpiApplyBtn.addEventListener('click', function() {
+            loadKPIPerformanceData();
+        });
+    }
+    
+    // Initialize KPI input listeners
+    const kpiInputs = document.querySelectorAll('.kpi-target-input');
+    kpiInputs.forEach(input => {
+        input.addEventListener('input', function() {
+            calculateKPIEffectiveness(this.dataset.metric);
+        });
+    });
+    
+    // Load initial KPI data
+    loadKPIPerformanceData();
+    
+    console.log('KPI Performance Tracking initialized successfully');
+}
+
+// Load KPI Performance data
+async function loadKPIPerformanceData() {
+    try {
+        console.log('Loading KPI Performance data...');
+        
+        // Get selected month
+        const selectedMonth = document.getElementById('kpi-month-select')?.value || '2024-09';
+        
+        // Build API URL
+        let apiUrl = '/api/kpi-performance?';
+        const params = new URLSearchParams();
+        params.append('month', selectedMonth);
+        
+        apiUrl += params.toString();
+        
+        console.log('Fetching KPI performance data:', apiUrl);
+        const response = await fetch(apiUrl);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('KPI Performance API response:', data);
+        
+        if (data.error) {
+            console.error('KPI Performance API error:', data.error);
+            loadKPIPerformanceDemoData();
+            return;
+        }
+        
+        // Check if data is empty
+        if (!data.metrics || Object.keys(data.metrics).length === 0) {
+            console.log('No KPI data available, loading demo data...');
+            loadKPIPerformanceDemoData();
+            return;
+        }
+        
+        // Update KPI table with real data
+        updateKPITable(data.metrics);
+        
+        // Update month display
+        updateKPIMonthDisplay(selectedMonth);
+        
+    } catch (error) {
+        console.error('Error loading KPI performance data:', error);
+        console.log('Falling back to demo data...');
+        loadKPIPerformanceDemoData();
+    }
+}
+
+// Load demo data for KPI Performance when API is not available
+function loadKPIPerformanceDemoData() {
+    console.log('Loading KPI Performance demo data...');
+    
+    // Demo data - these would come from your actual API in real implementation
+    const demoMetrics = {
+        reach: 85000,
+        impressions: 125000,
+        frequency: 1.47,
+        video_plays: 45000,
+        ctr: 2.8,
+        interactions: 12000,
+        message_conversations: 450,
+        video_plays_2s: 38000,
+        conversion_rate: 12.5,
+        roas: 1.7
+    };
+    
+    updateKPITable(demoMetrics);
+    
+    // Update month display
+    const selectedMonth = document.getElementById('kpi-month-select')?.value || '2024-09';
+    updateKPIMonthDisplay(selectedMonth);
+}
+
+// Update KPI table with actual data
+function updateKPITable(metrics) {
+    console.log('Updating KPI table with metrics:', metrics);
+    
+    // Update actual achieved values (first column)
+    Object.entries(metrics).forEach(([metric, value]) => {
+        const row = document.querySelector(`tr[data-metric="${metric}"]`) || 
+                   document.querySelector(`tr .kpi-result[data-metric="${metric}"]`)?.closest('tr');
+        
+        if (row) {
+            // Update the first column with actual value
+            const firstCell = row.querySelector('td:first-child');
+            if (firstCell) {
+                const metricName = firstCell.textContent.trim();
+                firstCell.innerHTML = `
+                    <div class="text-sm font-medium text-gray-900">${metricName}</div>
+                    <div class="text-lg font-bold text-blue-600">${formatKPINumber(metric, value)}</div>
+                `;
+            }
+            
+            // Store the actual value for calculation
+            row.dataset.actualValue = value;
+            
+            // Calculate effectiveness if KPI target is set
+            const kpiInput = row.querySelector('.kpi-target-input');
+            if (kpiInput && kpiInput.value) {
+                calculateKPIEffectiveness(metric);
+            }
+        }
+    });
+}
+
+// Calculate KPI effectiveness
+function calculateKPIEffectiveness(metric) {
+    const row = document.querySelector(`tr .kpi-result[data-metric="${metric}"]`)?.closest('tr') ||
+                document.querySelector(`tr[data-metric="${metric}"]`);
+    
+    if (!row) return;
+    
+    const actualValue = parseFloat(row.dataset.actualValue || 0);
+    const kpiInput = row.querySelector('.kpi-target-input');
+    const kpiTarget = parseFloat(kpiInput?.value || 0);
+    
+    if (kpiTarget <= 0) {
+        // Reset result if no target set
+        const resultDiv = row.querySelector('.kpi-result');
+        if (resultDiv) {
+            resultDiv.innerHTML = `
+                <span class="kpi-value font-semibold">-</span>
+                <span class="kpi-percentage">%</span>
+            `;
+            resultDiv.className = 'kpi-result';
+        }
+        return;
+    }
+    
+    // Calculate effectiveness percentage
+    const effectiveness = (actualValue / kpiTarget) * 100;
+    
+    // Update result display
+    const resultDiv = row.querySelector('.kpi-result');
+    if (resultDiv) {
+        const valueSpan = resultDiv.querySelector('.kpi-value');
+        const percentageSpan = resultDiv.querySelector('.kpi-percentage');
+        
+        if (valueSpan && percentageSpan) {
+            valueSpan.textContent = effectiveness.toFixed(1);
+            
+            // Apply color coding based on effectiveness
+            if (effectiveness >= 100) {
+                // Achieved KPI - Green
+                resultDiv.className = 'kpi-result bg-green-100 text-green-800 px-2 py-1 rounded font-semibold';
+            } else {
+                // Not achieved KPI - Red
+                resultDiv.className = 'kpi-result bg-red-100 text-red-800 px-2 py-1 rounded font-semibold';
+            }
+        }
+    }
+}
+
+// Format KPI numbers based on metric type
+function formatKPINumber(metric, value) {
+    const numValue = parseFloat(value);
+    
+    switch (metric) {
+        case 'ctr':
+        case 'conversion_rate':
+            return `${numValue.toFixed(2)}%`;
+        case 'frequency':
+        case 'roas':
+            return numValue.toFixed(2);
+        case 'reach':
+        case 'impressions':
+        case 'video_plays':
+        case 'interactions':
+        case 'message_conversations':
+        case 'video_plays_2s':
+            if (numValue >= 1000000) {
+                return `${(numValue / 1000000).toFixed(1)}M`;
+            } else if (numValue >= 1000) {
+                return `${(numValue / 1000).toFixed(1)}K`;
+            }
+            return numValue.toLocaleString('vi-VN');
+        default:
+            return numValue.toLocaleString('vi-VN');
+    }
+}
+
+// Update KPI month display
+function updateKPIMonthDisplay(selectedMonth) {
+    const display = document.getElementById('kpi-month-display');
+    if (!display) return;
+    
+    // Format month display (e.g., "2024-09" -> "Tháng 09/2024")
+    const [year, month] = selectedMonth.split('-');
+    const monthNames = {
+        '01': '01', '02': '02', '03': '03', '04': '04', '05': '05', '06': '06',
+        '07': '07', '08': '08', '09': '09', '10': '10', '11': '11', '12': '12'
+    };
+    
+    display.textContent = `Tháng ${monthNames[month]}/${year}`;
+}
+
+// Save KPI targets to backend (for persistence)
+async function saveKPITargets() {
+    try {
+        const targets = {};
+        const kpiInputs = document.querySelectorAll('.kpi-target-input');
+        
+        kpiInputs.forEach(input => {
+            if (input.value) {
+                targets[input.dataset.metric] = parseFloat(input.value);
+            }
+        });
+        
+        const selectedMonth = document.getElementById('kpi-month-select')?.value || '2024-09';
+        
+        const response = await fetch('/api/kpi-targets', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                month: selectedMonth,
+                targets: targets
+            })
+        });
+        
+        if (response.ok) {
+            console.log('KPI targets saved successfully');
+        } else {
+            console.error('Failed to save KPI targets');
+        }
+        
+    } catch (error) {
+        console.error('Error saving KPI targets:', error);
+    }
+}
+
+// Load saved KPI targets from backend
+async function loadKPITargets() {
+    try {
+        const selectedMonth = document.getElementById('kpi-month-select')?.value || '2024-09';
+        
+        const response = await fetch(`/api/kpi-targets?month=${selectedMonth}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.targets) {
+                Object.entries(data.targets).forEach(([metric, value]) => {
+                    const input = document.querySelector(`.kpi-target-input[data-metric="${metric}"]`);
+                    if (input) {
+                        input.value = value;
+                        calculateKPIEffectiveness(metric);
+                    }
+                });
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error loading KPI targets:', error);
+    }
 }

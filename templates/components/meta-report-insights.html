@@ -458,4 +458,221 @@
             </div>
         </div>
     </div>
+
+    <!-- KPI Performance Tracking Section -->
+    <div id="kpi-performance-section" class="bg-white rounded-lg shadow mt-8 border border-gray-100">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-2xl font-bold text-black">TRACKING HIỆU QUẢ SO VỚI KPI PERFORMANCE</h2>
+                    <p class="text-sm text-gray-600 mt-1">Theo dõi hiệu suất mỗi tháng so với mục tiêu KPI</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-600">Tháng:</label>
+                        <select id="kpi-month-select" class="border px-2 py-1 rounded text-sm">
+                            <option value="2024-09" selected>Tháng 09/2024</option>
+                            <option value="2024-10">Tháng 10/2024</option>
+                            <option value="2024-11">Tháng 11/2024</option>
+                            <option value="2024-12">Tháng 12/2024</option>
+                            <option value="2025-01">Tháng 01/2025</option>
+                            <option value="2025-02">Tháng 02/2025</option>
+                            <option value="2025-03">Tháng 03/2025</option>
+                            <option value="2025-04">Tháng 04/2025</option>
+                            <option value="2025-05">Tháng 05/2025</option>
+                            <option value="2025-06">Tháng 06/2025</option>
+                            <option value="2025-07">Tháng 07/2025</option>
+                            <option value="2025-08">Tháng 08/2025</option>
+                        </select>
+                    </div>
+                    <button id="kpi-apply-filters-btn" class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                        Áp dụng
+                    </button>
+                    <div class="text-sm text-gray-600">
+                        <span id="kpi-month-display">Tháng 09/2024</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="p-6">
+            <!-- KPI Performance Table -->
+            <div class="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                <div class="overflow-x-auto">
+                    <table class="kpi-table min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/3">Số thực đạt</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/3">KPI Tổng</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-1/3">Hiệu quả (% thực đạt so với KPI tổng)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kpi-performance-table" class="bg-white divide-y divide-gray-200">
+                            <!-- Lượt tiếp cận (Reach) -->
+                            <tr class="kpi-row" data-metric="reach">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">Lượt tiếp cận</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="reach" placeholder="Nhập KPI" min="0" step="1">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="reach">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- Lượt hiển thị (Impressions) -->
+                            <tr class="kpi-row" data-metric="impressions">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">Lượt hiển thị</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="impressions" placeholder="Nhập KPI" min="0" step="1">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="impressions">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- Tần suất (Frequency) -->
+                            <tr class="kpi-row" data-metric="frequency">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">Tần suất</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="frequency" placeholder="Nhập KPI" min="0" step="0.1">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="frequency">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- Lượt phát video (Video plays) -->
+                            <tr class="kpi-row" data-metric="video_plays">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">Lượt phát video</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="video_plays" placeholder="Nhập KPI" min="0" step="1">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="video_plays">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- CTR (%) -->
+                            <tr class="kpi-row" data-metric="ctr">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">CTR (%)</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="ctr" placeholder="Nhập KPI" min="0" step="0.01">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="ctr">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- Lượt tương tác (Interactions) -->
+                            <tr class="kpi-row" data-metric="interactions">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">Lượt tương tác</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="interactions" placeholder="Nhập KPI" min="0" step="1">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="interactions">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- Lượt bắt đầu trò chuyện qua tin nhắn -->
+                            <tr class="kpi-row" data-metric="message_conversations">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">Lượt bắt đầu trò chuyện qua tin nhắn</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="message_conversations" placeholder="Nhập KPI" min="0" step="1">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="message_conversations">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- Lượt phát video liên tục trong tối thiểu 2 giây -->
+                            <tr class="kpi-row" data-metric="video_plays_2s">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">Lượt phát video liên tục trong tối thiểu 2 giây</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="video_plays_2s" placeholder="Nhập KPI" min="0" step="1">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="video_plays_2s">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- CR (%) -->
+                            <tr class="kpi-row" data-metric="conversion_rate">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">CR (%) => Xác định theo mục tiêu chuyển đổi. Công thức CR = (Lượt mua trên Meta / Số lượt nhấp) x 100%</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="conversion_rate" placeholder="Nhập KPI" min="0" step="0.01">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="conversion_rate">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <!-- ROAS -->
+                            <tr class="kpi-row" data-metric="roas">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">ROAS</td>
+                                <td class="px-4 py-3">
+                                    <input type="number" class="kpi-target-input border px-2 py-1 rounded text-sm w-full" 
+                                           data-metric="roas" placeholder="Nhập KPI" min="0" step="0.01">
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="kpi-result" data-metric="roas">
+                                        <span class="kpi-value font-semibold">-</span>
+                                        <span class="kpi-percentage">%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Legend -->
+            <div class="mt-4 flex justify-center gap-6 text-sm">
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-green-500 rounded"></div>
+                    <span class="text-gray-600">Đạt KPI (≥ 100%)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 bg-red-500 rounded"></div>
+                    <span class="text-gray-600">Chưa đạt KPI (< 100%)</span>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
