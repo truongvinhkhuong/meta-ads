@@ -249,6 +249,18 @@
     animation: slideInUp 0.3s ease-out;
 }
 
+/* Expanded chatbot - occupy about half of the viewport */
+.chatbot-container.expanded {
+    width: 50vw; /* khoảng nửa khung hình theo chiều ngang */
+    max-width: 720px;
+    height: 60vh; /* tăng chiều cao khi mở rộng */
+}
+
+/* Increase message area when expanded */
+.chatbot-container.expanded #chatbot-messages {
+    max-height: calc(60vh - 150px);
+}
+
 @keyframes slideInUp {
     from {
         opacity: 0;
@@ -375,6 +387,15 @@
         left: 10px;
         width: auto;
         bottom: 70px;
+    }
+    .chatbot-container.expanded {
+        width: auto;
+        left: 5vw;
+        right: 5vw;
+        height: 65vh;
+    }
+    .chatbot-container.expanded #chatbot-messages {
+        max-height: calc(65vh - 150px);
     }
     
     .chatbot-toggle {

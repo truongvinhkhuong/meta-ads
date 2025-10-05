@@ -14,6 +14,7 @@ class ChatbotManager {
         this.input = document.getElementById('chatbot-input');
         this.sendBtn = document.getElementById('chatbot-send');
         this.clearBtn = document.getElementById('chatbot-clear');
+        this.expandBtn = document.getElementById('chatbot-expand');
         this.messagesContainer = document.getElementById('chatbot-messages');
         this.typingIndicator = null;
     }
@@ -22,6 +23,9 @@ class ChatbotManager {
         this.toggleBtn.addEventListener('click', () => this.toggleContainer());
         this.sendBtn.addEventListener('click', () => this.sendMessage());
         this.clearBtn.addEventListener('click', () => this.clearHistory());
+        if (this.expandBtn) {
+            this.expandBtn.addEventListener('click', () => this.toggleExpand());
+        }
         
         this.input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -55,6 +59,19 @@ class ChatbotManager {
         if (!isVisible) {
             this.input.focus();
         }
+    }
+
+    toggleExpand() {
+        const isExpanded = this.container.classList.contains('expanded');
+        if (isExpanded) {
+            this.container.classList.remove('expanded');
+            if (this.expandBtn) this.expandBtn.textContent = 'Mở rộng';
+        } else {
+            this.container.classList.add('expanded');
+            if (this.expandBtn) this.expandBtn.textContent = 'Thu nhỏ';
+        }
+        // Ensure messages area adjusts
+        setTimeout(() => this.scrollToBottom(), 100);
     }
 
     buildContext() {
@@ -270,13 +287,21 @@ class ChatbotManager {
 
     formatMessage(text) {
         // Basic markdown formatting
-        return text
+        let formatted = text
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             .replace(/`(.*?)`/g, '<code>$1</code>')
             .replace(/\n/g, '<br>')
             .replace(/(\d+%)/g, '<span class="highlight-metric">$1</span>')
-            .replace(/(\$\d+)/g, '<span class="highlight-money">$1</span>');
+            .replace(/(\$\s?([0-9]{1,3}(,[0-9]{3})*|[0-9]+)(\.[0-9]+)?)/g, (m)=>{
+                const n = m.replace(/[^0-9.]/g,'');
+                const v = Math.round(parseFloat(n||'0'));
+                return `<span class="highlight-money">${v.toLocaleString('vi-VN')}₫</span>`;
+            })
+            .replace(/\bUSD\b/g, 'VND');
+        // If any plain VND amounts appear like 1000000d, normalize to ₫ with grouping
+        formatted = formatted.replace(/\b([0-9]{4,})d\b/gi, (_,num)=>`${Number(num).toLocaleString('vi-VN')}₫`);
+        return formatted;
     }
 
     scrollToBottom() {

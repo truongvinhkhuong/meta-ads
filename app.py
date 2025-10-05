@@ -319,37 +319,53 @@ class OpenAIChatbot:
         if extraction_date:
             summary_parts.append(f"**Dữ liệu cập nhật:** {extraction_date}")
         
-        # Kiểm tra xem có dữ liệu insights không
+        # Tổng hợp số liệu từ TẤT CẢ campaigns, ưu tiên insights, fallback summary_metrics
         has_insights_data = False
+        all_campaigns = context.get('all_campaigns', [])
         campaigns_with_insights = context.get('campaigns_with_insights', 0)
-        
-        if campaigns_with_insights > 0:
-            has_insights_data = True
-            summary_parts.append(f"**Dữ liệu insights:** {campaigns_with_insights}/{context.get('campaigns_count', 0)} campaigns")
-            
-            # Thông tin từ TẤT CẢ campaigns có insights
-            all_campaigns = context.get('all_campaigns', [])
-            campaigns_without_insights = context.get('campaigns_without_insights', 0)
-            
-            if all_campaigns:
-                total_spend = sum(float(c.get('insights', {}).get('spend', 0)) for c in all_campaigns)
-                total_impressions = sum(int(float(c.get('insights', {}).get('impressions', 0))) for c in all_campaigns)
-                total_clicks = sum(int(float(c.get('insights', {}).get('clicks', 0))) for c in all_campaigns)
-                
-                summary_parts.append(f"**Tổng chi tiêu ({len(all_campaigns)} campaigns):** ${total_spend:,.0f}")
+        campaigns_without_insights = context.get('campaigns_without_insights', 0)
+
+        if all_campaigns:
+            # Gộp theo ưu tiên: insights -> summary_metrics -> 0
+            def _num(v, cast=float):
+                try:
+                    return cast(v)
+                except Exception:
+                    try:
+                        return cast(float(v))
+                    except Exception:
+                        return 0
+
+            total_spend = 0.0
+            total_impressions = 0
+            total_clicks = 0
+
+            for c in all_campaigns:
+                ins = (c.get('insights') or {}) if isinstance(c, dict) else {}
+                summ = (c.get('summary_metrics') or {}) if isinstance(c, dict) else {}
+
+                spend = _num(ins.get('spend') if ins.get('spend') is not None else summ.get('total_spend') or 0, float)
+                impressions = int(_num(ins.get('impressions') if ins.get('impressions') is not None else summ.get('total_impressions') or 0, float))
+                clicks = int(_num(ins.get('clicks') if ins.get('clicks') is not None else summ.get('total_clicks') or 0, float))
+
+                total_spend += spend
+                total_impressions += impressions
+                total_clicks += clicks
+
+            if total_spend > 0 or total_impressions > 0 or total_clicks > 0:
+                has_insights_data = True
+                summary_parts.append(f"**Dữ liệu campaigns:** {campaigns_with_insights}/{context.get('campaigns_count', 0)} có insights")
+                summary_parts.append(f"**Tổng chi tiêu ({len(all_campaigns)} campaigns):** {int(total_spend):,}₫")
                 summary_parts.append(f"**Tổng impressions:** {total_impressions:,}")
                 summary_parts.append(f"**Tổng clicks:** {total_clicks:,}")
-                
-                # Tính CTR và CPC trung bình
+
                 if total_impressions > 0:
                     avg_ctr = (total_clicks / total_impressions) * 100
                     summary_parts.append(f"**CTR trung bình:** {avg_ctr:.2f}%")
-                
                 if total_clicks > 0:
-                    avg_cpc = total_spend / total_clicks
-                    summary_parts.append(f"**CPC trung bình:** ${avg_cpc:,.0f}")
-                
-                # Thêm thông tin về campaigns không có insights
+                    avg_cpc = total_spend / total_clicks if total_clicks else 0
+                summary_parts.append(f"**CPC trung bình:** {int(avg_cpc):,}₫")
+
                 if campaigns_without_insights > 0:
                     summary_parts.append(f"**{campaigns_without_insights} campaigns chưa có dữ liệu insights**")
         
@@ -372,7 +388,7 @@ class OpenAIChatbot:
             has_insights_data = True
             recent_spend = sum(d.get('spend', 0) for d in daily_data[-3:])  # 3 ngày gần nhất
             avg_ctr = sum(d.get('ctr', 0) for d in daily_data) / len(daily_data) if daily_data else 0
-            summary_parts.append(f"**Chi tiêu 3 ngày gần:** ${recent_spend:,.2f}")
+            summary_parts.append(f"**Chi tiêu 3 ngày gần:** {int(recent_spend):,}₫")
             summary_parts.append(f"**CTR trung bình:** {avg_ctr:.2f}%")
         
         # Thông báo nếu không có dữ liệu insights
@@ -560,24 +576,27 @@ def ask_question():
         if isinstance(context, dict):
             # Ưu tiên dữ liệu từ frontend nếu có, fallback về global_data
             context.setdefault('extraction_date', context.get('extraction_date') or global_data.get('extraction_date'))
-            context.setdefault('campaigns_count', context.get('campaigns_count') or len(global_data.get('campaigns', [])))
-            context.setdefault('campaigns_with_insights', context.get('campaigns_with_insights', 0))
-            context.setdefault('campaigns_without_insights', context.get('campaigns_without_insights', 0))
-            
-            # Thêm dữ liệu campaigns với insights từ global_data (fallback)
+            context['campaigns_count'] = context.get('campaigns_count') or len(global_data.get('campaigns', []))
+
+            # Lấy tất cả campaigns (bao gồm đang chạy, tạm dừng, đã dừng)
             campaigns = global_data.get('campaigns', [])
-            campaigns_with_insights = [c for c in campaigns if c.get('insights')]
-            
-            # Nếu frontend chưa cung cấp all_campaigns, sử dụng dữ liệu từ global_data
-            if not context.get('all_campaigns_data') and campaigns_with_insights:
-                context.setdefault('all_campaigns', campaigns_with_insights)
-                context.setdefault('sample_campaigns', campaigns_with_insights[:20])
-            elif context.get('all_campaigns_data'):
-                # Sử dụng dữ liệu từ frontend, filter chỉ campaigns có insights
+
+            # Nếu frontend chưa cung cấp all_campaigns_data, sử dụng dữ liệu từ global_data (KHÔNG lọc theo insights)
+            if not context.get('all_campaigns_data'):
+                context.setdefault('all_campaigns', campaigns)
+                context.setdefault('sample_campaigns', campaigns[:50])
+            else:
+                # Sử dụng dữ liệu từ frontend nguyên bản (KHÔNG lọc theo insights)
                 all_campaigns_data = context.get('all_campaigns_data', [])
-                campaigns_with_insights_from_frontend = [c for c in all_campaigns_data if c.get('insights')]
-                context.setdefault('all_campaigns', campaigns_with_insights_from_frontend)
-                context.setdefault('sample_campaigns', campaigns_with_insights_from_frontend[:20])
+                context.setdefault('all_campaigns', all_campaigns_data)
+                context.setdefault('sample_campaigns', all_campaigns_data[:50])
+
+            # Tính lại số lượng campaigns có/không có insights dựa trên danh sách thực tế
+            effective_campaigns = context.get('all_campaigns') or []
+            with_insights = sum(1 for c in effective_campaigns if c.get('insights'))
+            without_insights = max(len(effective_campaigns) - with_insights, 0)
+            context['campaigns_with_insights'] = with_insights
+            context['campaigns_without_insights'] = without_insights
         
         chatbot = OpenAIChatbot()
         
