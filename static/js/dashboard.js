@@ -116,12 +116,26 @@ document.addEventListener('DOMContentLoaded',()=>{
                     headers:{'Content-Type':'application/json'},
                     body:JSON.stringify({start_date:'2023-01-01'})
                 });
+                
+                if(!res.ok){
+                    // Tắt console error cho 503 Service Unavailable
+                    if(res.status !== 503) {
+                        console.error(`API refresh failed: ${res.status} ${res.statusText}`);
+                    }
+                    alert('Không cập nhật được dữ liệu: Service Unavailable'); 
+                    return;
+                }
+                
                 const j=await res.json();
                 if(!j.ok){ 
                     alert('Không cập nhật được dữ liệu: '+(j.error||'unknown')); 
                 }
                 await loadAdsData();
             }catch(e){ 
+                // Tắt console error cho lỗi kết nối
+                if(!e.message?.includes('503') && !e.message?.includes('Service Unavailable')) {
+                    console.error('Refresh error:', e);
+                }
                 alert('Lỗi kết nối khi cập nhật'); 
             }
             finally{ 
