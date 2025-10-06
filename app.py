@@ -658,17 +658,29 @@ def refresh_data():
         
         # Thêm timeout cho toàn bộ quá trình
         import signal
+        import threading
         
         def timeout_handler(signum, frame):
             raise TimeoutError("Refresh timeout sau 5 phút")
         
-        # Set timeout 5 phút cho Heroku
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(300)  # 5 phút
+        # Set timeout 5 phút cho Heroku - chỉ hoạt động trong main thread
+        if threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(300)  # 5 phút
+            except (ValueError, OSError):
+                # Signal không hoạt động trên Heroku, bỏ qua
+                pass
         
         try:
             data = extractor.extract_all_data(start_date or "2023-01-01")
-            signal.alarm(0)  # Cancel timeout
+            
+            # Cancel timeout nếu có
+            if threading.current_thread() is threading.main_thread():
+                try:
+                    signal.alarm(0)
+                except (ValueError, OSError):
+                    pass
             
             if data.get('error'):
                 return jsonify({
@@ -695,7 +707,11 @@ def refresh_data():
             })
             
         except TimeoutError as e:
-            signal.alarm(0)
+            if threading.current_thread() is threading.main_thread():
+                try:
+                    signal.alarm(0)
+                except (ValueError, OSError):
+                    pass
             logger.error(f"Refresh timeout: {e}")
             return jsonify({
                 'ok': False, 
