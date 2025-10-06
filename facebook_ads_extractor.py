@@ -4,10 +4,14 @@ import os
 import json
 import logging
 import shutil
+import time
 from datetime import datetime, date
 from typing import Dict, List, Any
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dotenv import load_dotenv
+from heroku_config import get_timeout_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +29,24 @@ class FacebookAdsExtractor:
         self.base_url = "https://graph.facebook.com/v21.0"
         self._page_cache = {}
         
+        # Cấu hình timeout và retry dựa trên environment
+        timeout_config = get_timeout_config()
+        self.timeout = timeout_config['request_timeout']
+        self.max_retries = timeout_config['max_retries']
+        self.backoff_factor = timeout_config['backoff_factor']
+        
+        # Tạo session với retry strategy
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=self.max_retries,
+            backoff_factor=self.backoff_factor,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
         if not self.access_token:
             raise ValueError("USER_TOKEN hoặc FACEBOOK_ACCESS_TOKEN không được cấu hình")
         if not self.account_ids or self.account_ids[0] == '':
@@ -32,13 +54,14 @@ class FacebookAdsExtractor:
 
     def _infer_campaign_page(self, campaign_id: str) -> Dict[str, str]:
         try:
-            ads_res = requests.get(
+            ads_res = self.session.get(
                 f"{self.base_url}/{campaign_id}/ads",
                 params={
                     'access_token': self.access_token,
                     'fields': 'id,adcreatives{object_story_id,object_id,instagram_actor_id}',
                     'limit': 3
-                }
+                },
+                timeout=self.timeout
             )
             if ads_res.status_code != 200:
                 return {}
@@ -57,7 +80,7 @@ class FacebookAdsExtractor:
                 return {}
             if page_id in self._page_cache:
                 return {'page_id': page_id, 'page_name': self._page_cache[page_id]}
-            page_res = requests.get(f"{self.base_url}/{page_id}", params={'access_token': self.access_token, 'fields': 'name'})
+            page_res = self.session.get(f"{self.base_url}/{page_id}", params={'access_token': self.access_token, 'fields': 'name'}, timeout=self.timeout)
             if page_res.status_code == 200:
                 name = page_res.json().get('name') or ''
                 self._page_cache[page_id] = name
@@ -73,13 +96,19 @@ class FacebookAdsExtractor:
                 'access_token': self.access_token,
                 'fields': 'id,name'
             }
-            response = requests.get(url, params=params)
+            response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             
             data = response.json()
             logger.info(f"Kết nối thành công! Tìm thấy {len(data.get('data', []))} tài khoản quảng cáo")
             return True
             
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout khi kết nối Facebook API (>{self.timeout}s)")
+            return False
+        except requests.exceptions.ConnectionError:
+            logger.error("Lỗi kết nối mạng đến Facebook API")
+            return False
         except requests.exceptions.RequestException as e:
             logger.error(f"Lỗi kết nối: {e}")
             return False
@@ -93,7 +122,7 @@ class FacebookAdsExtractor:
                 'limit': 100
             }
             
-            response = requests.get(url, params=params)
+            response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             
             data = response.json()
@@ -110,7 +139,7 @@ class FacebookAdsExtractor:
                 
                 try:
                     perm_url = f"{self.base_url}/me/permissions"
-                    perm_response = requests.get(perm_url, params={'access_token': self.access_token})
+                    perm_response = self.session.get(perm_url, params={'access_token': self.access_token}, timeout=self.timeout)
                     if perm_response.status_code == 200:
                         permissions = perm_response.json().get('data', [])
                         ads_read_granted = any(p.get('permission') == 'ads_read' and p.get('status') == 'granted' for p in permissions)
@@ -121,6 +150,12 @@ class FacebookAdsExtractor:
             
             return campaigns
             
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout khi lấy campaigns từ account {account_id} (>{self.timeout}s)")
+            return []
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Lỗi kết nối khi lấy campaigns từ account {account_id}")
+            return []
         except requests.exceptions.RequestException as e:
             logger.error(f"Lỗi khi lấy chiến dịch: {e}")
             return []
@@ -139,7 +174,7 @@ class FacebookAdsExtractor:
             }
             
             logger.info(f"Lấy insights cho campaign {campaign_id}")
-            response = requests.get(url, params=params)
+            response = self.session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             
             data = response.json()
@@ -152,6 +187,12 @@ class FacebookAdsExtractor:
                 logger.warning(f"Không có insights data cho campaign {campaign_id}")
                 return {}
             
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout khi lấy insights cho campaign {campaign_id} (>{self.timeout}s)")
+            return {}
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Lỗi kết nối khi lấy insights cho campaign {campaign_id}")
+            return {}
         except requests.exceptions.RequestException as e:
             logger.error(f"Lỗi khi lấy insights cho campaign {campaign_id}: {e}")
             return {}

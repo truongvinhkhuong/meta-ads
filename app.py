@@ -644,13 +644,93 @@ def debug_data():
 def refresh_data():
     try:
         start_date = request.json.get('start_date') if request.is_json else None
+        
+        # Kiểm tra kết nối trước khi bắt đầu
         extractor = FacebookAdsExtractor()
-        data = extractor.extract_all_data(start_date or "2023-01-01")
-        ok = extractor.save_to_json(data, "ads_data.json")
-        return jsonify({'ok': bool(ok), 'campaigns': len(data.get('campaigns', []))})
+        if not extractor.test_connection():
+            return jsonify({
+                'ok': False, 
+                'error': 'Không thể kết nối đến Facebook API. Vui lòng kiểm tra token và kết nối mạng.',
+                'connection_error': True
+            }), 503
+        
+        logger.info(f"Bắt đầu refresh dữ liệu từ ngày: {start_date or '2023-01-01'}")
+        
+        # Thêm timeout cho toàn bộ quá trình
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Refresh timeout sau 5 phút")
+        
+        # Set timeout 5 phút cho Heroku
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(300)  # 5 phút
+        
+        try:
+            data = extractor.extract_all_data(start_date or "2023-01-01")
+            signal.alarm(0)  # Cancel timeout
+            
+            if data.get('error'):
+                return jsonify({
+                    'ok': False, 
+                    'error': data['error'],
+                    'extraction_error': True
+                }), 500
+            
+            ok = extractor.save_to_json(data, "ads_data.json")
+            
+            if not ok:
+                return jsonify({
+                    'ok': False, 
+                    'error': 'Không thể lưu dữ liệu vào file',
+                    'save_error': True
+                }), 500
+            
+            logger.info(f"Refresh thành công: {len(data.get('campaigns', []))} campaigns")
+            return jsonify({
+                'ok': True, 
+                'campaigns': len(data.get('campaigns', [])),
+                'extraction_date': data.get('extraction_date'),
+                'message': 'Dữ liệu đã được cập nhật thành công'
+            })
+            
+        except TimeoutError as e:
+            signal.alarm(0)
+            logger.error(f"Refresh timeout: {e}")
+            return jsonify({
+                'ok': False, 
+                'error': 'Quá trình refresh quá lâu, vui lòng thử lại',
+                'timeout_error': True
+            }), 408
+            
+    except requests.exceptions.Timeout:
+        logger.error("Timeout khi kết nối Facebook API")
+        return jsonify({
+            'ok': False, 
+            'error': 'Timeout khi kết nối Facebook API',
+            'timeout_error': True
+        }), 408
+    except requests.exceptions.ConnectionError:
+        logger.error("Lỗi kết nối mạng")
+        return jsonify({
+            'ok': False, 
+            'error': 'Lỗi kết nối mạng đến Facebook API',
+            'connection_error': True
+        }), 503
+    except ValueError as e:
+        logger.error(f"Lỗi cấu hình: {e}")
+        return jsonify({
+            'ok': False, 
+            'error': f'Lỗi cấu hình: {str(e)}',
+            'config_error': True
+        }), 500
     except Exception as e:
-        logger.error(f"Lỗi refresh: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        logger.error(f"Lỗi refresh không mong muốn: {e}")
+        return jsonify({
+            'ok': False, 
+            'error': f'Lỗi không mong muốn: {str(e)}',
+            'unknown_error': True
+        }), 500
 
 @app.route('/api/refresh-budgets')
 def api_refresh_budgets():
