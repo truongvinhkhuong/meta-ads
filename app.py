@@ -640,113 +640,151 @@ def debug_data():
             'status': 'error'
         })
 
+# Global refresh status tracking
+refresh_status = {
+    'status': 'idle',  # idle, running, completed, error
+    'progress': 0,
+    'message': '',
+    'error': None,
+    'campaigns_count': 0,
+    'extraction_date': None
+}
+
+def background_refresh(start_date):
+    """Background task to refresh data"""
+    global refresh_status
+    
+    try:
+        refresh_status['status'] = 'running'
+        refresh_status['progress'] = 10
+        refresh_status['message'] = 'Đang kiểm tra kết nối Facebook API...'
+        
+        extractor = FacebookAdsExtractor()
+        if not extractor.test_connection():
+            refresh_status.update({
+                'status': 'error',
+                'error': 'Không thể kết nối đến Facebook API. Vui lòng kiểm tra token và kết nối mạng.',
+                'connection_error': True
+            })
+            return
+        
+        refresh_status['progress'] = 20
+        refresh_status['message'] = 'Đang trích xuất dữ liệu campaigns...'
+        logger.info(f"Bắt đầu refresh dữ liệu từ ngày: {start_date or '2023-01-01'}")
+        
+        data = extractor.extract_all_data(start_date or "2023-01-01")
+        
+        refresh_status['progress'] = 80
+        refresh_status['message'] = 'Đang lưu dữ liệu...'
+        
+        if data.get('error'):
+            refresh_status.update({
+                'status': 'error',
+                'error': data['error'],
+                'extraction_error': True
+            })
+            return
+        
+        ok = extractor.save_to_json(data, "ads_data.json")
+        
+        if not ok:
+            refresh_status.update({
+                'status': 'error',
+                'error': 'Không thể lưu dữ liệu vào file',
+                'save_error': True
+            })
+            return
+        
+        refresh_status.update({
+            'status': 'completed',
+            'progress': 100,
+            'message': 'Hoàn thành refresh dữ liệu',
+            'campaigns_count': len(data.get('campaigns', [])),
+            'extraction_date': data.get('extraction_date')
+        })
+        
+        logger.info(f"Refresh thành công: {len(data.get('campaigns', []))} campaigns")
+        
+    except requests.exceptions.Timeout:
+        logger.error("Timeout khi kết nối Facebook API")
+        refresh_status.update({
+            'status': 'error',
+            'error': 'Timeout khi kết nối Facebook API',
+            'timeout_error': True
+        })
+    except requests.exceptions.ConnectionError:
+        logger.error("Lỗi kết nối mạng")
+        refresh_status.update({
+            'status': 'error',
+            'error': 'Lỗi kết nối mạng đến Facebook API',
+            'connection_error': True
+        })
+    except ValueError as e:
+        logger.error(f"Lỗi cấu hình: {e}")
+        refresh_status.update({
+            'status': 'error',
+            'error': f'Lỗi cấu hình: {str(e)}',
+            'config_error': True
+        })
+    except Exception as e:
+        logger.error(f"Lỗi refresh không mong muốn: {e}")
+        refresh_status.update({
+            'status': 'error',
+            'error': f'Lỗi không mong muốn: {str(e)}',
+            'unknown_error': True
+        })
+
 @app.route('/api/refresh', methods=['POST'])
 def refresh_data():
+    """Start background refresh task"""
+    global refresh_status
+    
+    # Check if already running
+    if refresh_status['status'] == 'running':
+        return jsonify({
+            'ok': False,
+            'error': 'Refresh đang chạy, vui lòng chờ hoàn thành',
+            'already_running': True
+        }), 409
+    
     try:
         start_date = request.json.get('start_date') if request.is_json else None
         
-        # Kiểm tra kết nối trước khi bắt đầu
-        extractor = FacebookAdsExtractor()
-        if not extractor.test_connection():
-            return jsonify({
-                'ok': False, 
-                'error': 'Không thể kết nối đến Facebook API. Vui lòng kiểm tra token và kết nối mạng.',
-                'connection_error': True
-            }), 503
+        # Reset status
+        refresh_status.update({
+            'status': 'running',
+            'progress': 0,
+            'message': 'Đang khởi tạo...',
+            'error': None,
+            'campaigns_count': 0,
+            'extraction_date': None
+        })
         
-        logger.info(f"Bắt đầu refresh dữ liệu từ ngày: {start_date or '2023-01-01'}")
-        
-        # Thêm timeout cho toàn bộ quá trình
-        import signal
+        # Start background task
         import threading
+        thread = threading.Thread(target=background_refresh, args=(start_date,))
+        thread.daemon = True
+        thread.start()
         
-        def timeout_handler(signum, frame):
-            raise TimeoutError("Refresh timeout sau 5 phút")
+        return jsonify({
+            'ok': True,
+            'message': 'Đã bắt đầu refresh dữ liệu trong background',
+            'status': 'started'
+        })
         
-        # Set timeout 5 phút cho Heroku - chỉ hoạt động trong main thread
-        if threading.current_thread() is threading.main_thread():
-            try:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(300)  # 5 phút
-            except (ValueError, OSError):
-                # Signal không hoạt động trên Heroku, bỏ qua
-                pass
-        
-        try:
-            data = extractor.extract_all_data(start_date or "2023-01-01")
-            
-            # Cancel timeout nếu có
-            if threading.current_thread() is threading.main_thread():
-                try:
-                    signal.alarm(0)
-                except (ValueError, OSError):
-                    pass
-            
-            if data.get('error'):
-                return jsonify({
-                    'ok': False, 
-                    'error': data['error'],
-                    'extraction_error': True
-                }), 500
-            
-            ok = extractor.save_to_json(data, "ads_data.json")
-            
-            if not ok:
-                return jsonify({
-                    'ok': False, 
-                    'error': 'Không thể lưu dữ liệu vào file',
-                    'save_error': True
-                }), 500
-            
-            logger.info(f"Refresh thành công: {len(data.get('campaigns', []))} campaigns")
-            return jsonify({
-                'ok': True, 
-                'campaigns': len(data.get('campaigns', [])),
-                'extraction_date': data.get('extraction_date'),
-                'message': 'Dữ liệu đã được cập nhật thành công'
-            })
-            
-        except TimeoutError as e:
-            if threading.current_thread() is threading.main_thread():
-                try:
-                    signal.alarm(0)
-                except (ValueError, OSError):
-                    pass
-            logger.error(f"Refresh timeout: {e}")
-            return jsonify({
-                'ok': False, 
-                'error': 'Quá trình refresh quá lâu, vui lòng thử lại',
-                'timeout_error': True
-            }), 408
-            
-    except requests.exceptions.Timeout:
-        logger.error("Timeout khi kết nối Facebook API")
-        return jsonify({
-            'ok': False, 
-            'error': 'Timeout khi kết nối Facebook API',
-            'timeout_error': True
-        }), 408
-    except requests.exceptions.ConnectionError:
-        logger.error("Lỗi kết nối mạng")
-        return jsonify({
-            'ok': False, 
-            'error': 'Lỗi kết nối mạng đến Facebook API',
-            'connection_error': True
-        }), 503
-    except ValueError as e:
-        logger.error(f"Lỗi cấu hình: {e}")
-        return jsonify({
-            'ok': False, 
-            'error': f'Lỗi cấu hình: {str(e)}',
-            'config_error': True
-        }), 500
     except Exception as e:
-        logger.error(f"Lỗi refresh không mong muốn: {e}")
+        logger.error(f"Lỗi khi khởi tạo refresh: {e}")
+        refresh_status['status'] = 'error'
+        refresh_status['error'] = str(e)
         return jsonify({
             'ok': False, 
-            'error': f'Lỗi không mong muốn: {str(e)}',
-            'unknown_error': True
+            'error': f'Lỗi khi khởi tạo refresh: {str(e)}'
         }), 500
+
+@app.route('/api/refresh-status')
+def refresh_status_endpoint():
+    """Get current refresh status"""
+    return jsonify(refresh_status)
 
 @app.route('/api/refresh-budgets')
 def api_refresh_budgets():

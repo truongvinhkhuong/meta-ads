@@ -109,8 +109,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(btn){
         btn.addEventListener('click',async ()=>{
             btn.disabled=true; 
-            btn.textContent='Đang cập nhật...';
+            btn.textContent='Đang khởi tạo...';
             try{
+                // Start background refresh
                 const res=await fetch('/api/refresh',{
                     method:'POST',
                     headers:{'Content-Type':'application/json'},
@@ -118,21 +119,24 @@ document.addEventListener('DOMContentLoaded',()=>{
                 });
                 
                 if(!res.ok){
-                    // Tắt console error cho 503 Service Unavailable
                     if(res.status !== 503) {
                         console.error(`API refresh failed: ${res.status} ${res.statusText}`);
                     }
-                    alert('Không cập nhật được dữ liệu: Service Unavailable'); 
+                    alert('Không thể khởi tạo refresh: Service Unavailable'); 
                     return;
                 }
                 
                 const j=await res.json();
                 if(!j.ok){ 
-                    alert('Không cập nhật được dữ liệu: '+(j.error||'unknown')); 
+                    alert('Không thể khởi tạo refresh: '+(j.error||'unknown')); 
+                    return;
                 }
+                
+                // Poll for status updates
+                await pollRefreshStatus(btn);
                 await loadAdsData();
+                
             }catch(e){ 
-                // Tắt console error cho lỗi kết nối
                 if(!e.message?.includes('503') && !e.message?.includes('Service Unavailable')) {
                     console.error('Refresh error:', e);
                 }
@@ -145,6 +149,47 @@ document.addEventListener('DOMContentLoaded',()=>{
         });
     }
 });
+
+// Poll refresh status function
+async function pollRefreshStatus(btn) {
+    return new Promise((resolve, reject) => {
+        const pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/refresh-status');
+                if (!res.ok) {
+                    clearInterval(pollInterval);
+                    reject(new Error('Failed to get refresh status'));
+                    return;
+                }
+                
+                const status = await res.json();
+                
+                // Update button text with progress
+                btn.textContent = `${status.message} (${status.progress}%)`;
+                
+                if (status.status === 'completed') {
+                    clearInterval(pollInterval);
+                    btn.textContent = 'Hoàn thành!';
+                    resolve(status);
+                } else if (status.status === 'error') {
+                    clearInterval(pollInterval);
+                    reject(new Error(status.error || 'Unknown error'));
+                }
+                // Continue polling if still running
+                
+            } catch (e) {
+                clearInterval(pollInterval);
+                reject(e);
+            }
+        }, 2000); // Poll every 2 seconds
+        
+        // Timeout after 10 minutes
+        setTimeout(() => {
+            clearInterval(pollInterval);
+            reject(new Error('Refresh timeout'));
+        }, 600000);
+    });
+}
 
 function computeKetQua(c){
     // Kết quả theo mục tiêu: ưu tiên link clicks, engagement, video views
