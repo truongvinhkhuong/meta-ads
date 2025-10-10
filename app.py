@@ -502,8 +502,14 @@ def load_ads_data() -> Dict[str, Any]:
     
     for attempt in range(max_retries):
         try:
-            with open('ads_data.json', 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            # Try to load ads_data.json, fallback to ads_data_initial.json if not found
+            try:
+                with open('ads_data.json', 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except FileNotFoundError:
+                logger.info("ads_data.json not found, using initial template")
+                with open('ads_data_initial.json', 'r', encoding='utf-8') as f:
+                    data = json.load(f)
             
             # Validate that we have campaigns data
             if not data.get('campaigns') or len(data.get('campaigns', [])) == 0:
