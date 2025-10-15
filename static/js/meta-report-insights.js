@@ -280,9 +280,10 @@ async function loadPageInsightsData() {
         const sinceDate = document.getElementById('since-date')?.value;
         const untilDate = document.getElementById('until-date')?.value;
         
-        // Build API URL - sử dụng demo API nếu checkbox được chọn
+        // Build API URLs: page insights for overview, content insights for content table/top posts
         const useDemoData = document.getElementById('use-demo-data')?.checked || false;
-        let apiUrl = useDemoData ? '/api/page-insights-demo?' : '/api/page-insights?';
+        let pageInsightsUrl = useDemoData ? '/api/page-insights-demo?' : '/api/page-insights?';
+        let contentInsightsUrl = '/api/meta-report-content-insights?';
         const params = new URLSearchParams();
         
         if (postType !== 'all') {
@@ -313,36 +314,34 @@ async function loadPageInsightsData() {
             params.append('until', endDate.toISOString().split('T')[0]);
         }
         
-        apiUrl += params.toString();
+        pageInsightsUrl += params.toString();
+        contentInsightsUrl += params.toString();
         
         // Show loading state
         showLoadingState();
         
-        // Fetch data
-        const response = await fetch(apiUrl);
+        // Fetch data in parallel
+        const [pageRes, contentRes] = await Promise.all([
+            fetch(pageInsightsUrl),
+            fetch(contentInsightsUrl)
+        ]);
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+        if (!pageRes.ok) throw new Error(`Page insights HTTP ${pageRes.status}`);
+        if (!contentRes.ok) throw new Error(`Content insights HTTP ${contentRes.status}`);
         
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            throw new Error('Response is not JSON. Server may be returning an HTML error page.');
-        }
+        const pageData = await pageRes.json();
+        const contentData = await contentRes.json();
         
-        const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(data.error);
-        }
+        if (pageData.error) throw new Error(typeof pageData.error === 'object' ? (pageData.error.message || 'Page error') : pageData.error);
+        if (contentData.error) throw new Error(typeof contentData.error === 'object' ? (contentData.error.message || 'Content error') : contentData.error);
         
         // Update UI with real data
-        updatePageInsightsUI(data);
-        updateDailyInteractionChartWithRealData(data);
-        updateTopContentWithRealData(data);
+        updatePageInsightsUI(pageData);
+        updateDailyInteractionChartWithRealData(pageData);
+        updateTopContentWithRealData(contentData);
         
         // Update date range display
-        updateDateRangeDisplay(data.date_range);
+        updateDateRangeDisplay(pageData.date_range || contentData.date_range);
         
         // Show demo data notice if using demo
         showDataSourceNotice(useDemoData);
@@ -532,22 +531,23 @@ function updateDailyInteractionChartWithRealData(data) {
 
 // Update top content with real data
 function updateTopContentWithRealData(data) {
-    const topPosts = data.top_posts || [];
+    // Handle data from meta-report-content-insights API
+    const posts = data.posts || [];
     const contentTypes = data.content_types || {};
     
     // Debug: Log data for verification
     console.log('🔍 Loading TOP 5 CONTENT with real Facebook data:', {
-        topPostsCount: topPosts.length,
+        postsCount: posts.length,
         contentTypes: contentTypes
     });
     
     // Update content types table
     updateContentTypesTable(contentTypes);
     
-    // Update top 5 content sections
-    updateTopContentSection('impressions', topPosts, 'impressions');
-    updateTopContentSection('likes', topPosts, 'engagement');
-    updateTopContentSection('clicks', topPosts, 'clicks');
+    // Update top 5 content sections with posts data
+    updateTopContentSection('impressions', posts, 'impressions');
+    updateTopContentSection('likes', posts, 'engagement');
+    updateTopContentSection('clicks', posts, 'clicks');
 }
 
 // Update content types table
@@ -557,11 +557,38 @@ function updateContentTypesTable(contentTypes) {
     
     tbody.innerHTML = '';
     
+    // Normalize label to plain post format (album, reels, photo, video, link, status)
+    const normalizeFormat = (label) => {
+        if (!label) return 'status';
+        // Remove leading emojis and trim
+        const noEmoji = label.replace(/^([\p{Emoji}\uFE0F\u200D]+)\s*/u, '').trim();
+        const l = noEmoji.toLowerCase();
+        if (l.includes('reels') || l === 'reels') return 'reels';
+        if (l.includes('album')) return 'album';
+        if (l.includes('video')) return 'video';
+        if (l.includes('hình') || l.includes('ảnh') || l.includes('photo') || l.includes('pic')) return 'photo';
+        if (l.includes('link') || l.includes('http')) return 'link';
+        if (l.includes('bài viết') || l.includes('status')) return 'status';
+        // Map common Vietnamese promo labels to status
+        if (l.includes('ưu đãi') || l.includes('khuyến mãi') || l.includes('voucher') || l.includes('giảm')) return 'status';
+        return 'status'; // fallback to a supported bucket
+    };
+    
+    // Aggregate counts by normalized format
+    const aggregated = {};
+    Object.entries(contentTypes).forEach(([format, count]) => {
+        const clean = normalizeFormat(format);
+        aggregated[clean] = (aggregated[clean] || 0) + (count || 0);
+    });
+    
+    // Sort aggregated results by count desc
+    const sortedTypes = Object.entries(aggregated).sort((a, b) => b[1] - a[1]);
+    
     let total = 0;
-    Object.entries(contentTypes).forEach(([type, count]) => {
+    sortedTypes.forEach(([clean, count]) => {
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${type}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${clean}</td>
             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${count}</td>
         `;
         tbody.appendChild(row);
@@ -605,23 +632,23 @@ function updateTopContentSection(sectionType, posts, metric) {
         // Tạo link clickable
         const postLink = post.permalink_url || `https://facebook.com/${post.id}`;
         
-        // Tạo icon cho từng loại post
-        const getPostIcon = (type) => {
-            switch(type) {
-                case 'photo': return '📷';
-                case 'video': return '🎥';
-                case 'link': return '🔗';
-                case 'status': return '💬';
-                default: return '📄';
-            }
-        };
+        // Strip emoji and normalize label
+        const stripEmoji = (s) => (s || '').replace(/^[\p{Emoji}\uFE0F\u200D]+\s*/u, '').trim();
         
         // Tạo thumbnail từ hình ảnh thật hoặc icon
         const thumbnailHtml = post.thumbnail_url ? 
             `<img src="${post.thumbnail_url}" alt="Post thumbnail" class="w-8 h-8 rounded-full object-cover">` :
-            `<div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <span class="text-blue-600 text-xs">${getPostIcon(post.type)}</span>
-            </div>`;
+            `<div class="w-8 h-8 bg-gray-100 rounded-full"></div>`;
+
+        // Calculate metric value based on available data
+        let metricValue = 0;
+        if (metric === 'impressions') {
+            metricValue = post.impressions || 0;
+        } else if (metric === 'engagement') {
+            metricValue = (post.reactions_count || 0) + (post.comments_count || 0) + (post.shares_count || 0);
+        } else if (metric === 'clicks') {
+            metricValue = post.clicks || 0;
+        }
 
         item.innerHTML = `
             <div class="content-rank">${index + 1}</div>
@@ -629,21 +656,16 @@ function updateTopContentSection(sectionType, posts, metric) {
                 ${thumbnailHtml}
             </div>
             <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium text-gray-900 truncate">${post.type || 'Unknown'}</div>
+                <div class="text-sm font-medium text-gray-900 truncate">${stripEmoji(post.content_format || post.type) || 'Unknown'}</div>
                 <div class="text-xs text-gray-600 line-clamp-2">${post.message || 'No message'}</div>
                 <div class="text-xs text-gray-500 mt-1 flex gap-2 flex-wrap">
-                    <span class="inline-block bg-gray-100 px-2 py-1 rounded-full">
-                        ${formatNumber(post.impressions || 0)} impressions
-                    </span>
                     <span class="inline-block bg-blue-100 px-2 py-1 rounded-full text-blue-700">
                         ${formatDate(post.created_time)}
                     </span>
-                    ${post.likes_count ? `<span class="inline-block bg-red-100 px-2 py-1 rounded-full text-red-700">❤️ ${post.likes_count}</span>` : ''}
-                    ${post.comments_count ? `<span class="inline-block bg-green-100 px-2 py-1 rounded-full text-green-700">💬 ${post.comments_count}</span>` : ''}
                 </div>
             </div>
             <div class="text-right">
-                <div class="text-sm font-semibold text-blue-600">${formatNumber(post[metric] || 0)}</div>
+                <div class="text-sm font-semibold text-blue-600">${formatNumber(metricValue)}</div>
                 <div class="text-xs text-gray-500">${metric}</div>
             </div>
         `;
@@ -660,7 +682,17 @@ function updateTopContentSection(sectionType, posts, metric) {
     });
     
     // Add total
-    const total = top5.reduce((sum, post) => sum + (post[metric] || 0), 0);
+    const total = top5.reduce((sum, post) => {
+        let metricValue = 0;
+        if (metric === 'impressions') {
+            metricValue = post.impressions || 0;
+        } else if (metric === 'engagement') {
+            metricValue = (post.reactions_count || 0) + (post.comments_count || 0) + (post.shares_count || 0);
+        } else if (metric === 'clicks') {
+            metricValue = post.clicks || 0;
+        }
+        return sum + metricValue;
+    }, 0);
     const totalDiv = document.createElement('div');
     totalDiv.className = 'bg-gray-50 p-2 rounded text-sm font-semibold';
     totalDiv.textContent = `Total: ${formatNumber(total)}`;

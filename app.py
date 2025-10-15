@@ -2008,6 +2008,35 @@ def api_meta_report_insights():
         logger.error(f"Lỗi /api/meta-report-insights: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/test-fb-connection')
+def test_fb_connection():
+    """Test Facebook API connection"""
+    try:
+        page_id = (os.getenv('FB_PAGE_ID') or os.getenv('PAGE_ID') or '').strip()
+        token = os.getenv('FACEBOOK_ACCESS_TOKEN') or os.getenv('USER_TOKEN') or get_access_token()
+        
+        if not page_id or not token:
+            return jsonify({'error': 'Missing page_id or token', 'page_id': page_id, 'has_token': bool(token)})
+        
+        # Test basic API call
+        base_url = 'https://graph.facebook.com/v18.0'
+        url = f"{base_url}/{page_id}"
+        params = {
+            'access_token': token,
+            'fields': 'id,name'
+        }
+        
+        res = requests.get(url, params=params, timeout=10)
+        
+        return jsonify({
+            'status_code': res.status_code,
+            'response': res.json() if res.status_code == 200 else res.text,
+            'page_id': page_id,
+            'has_token': bool(token)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 @app.route('/api/meta-report-content-insights')
 def api_meta_report_content_insights():
     """Lấy danh sách bài viết Facebook của 1 page và tạo AI insights cho Meta Report."""
@@ -2025,7 +2054,7 @@ def api_meta_report_content_insights():
         if not token:
             return jsonify({'error': 'Missing access token', 'posts': []}), 500
 
-        base_url = 'https://graph.facebook.com/v23.0'
+        base_url = 'https://graph.facebook.com/v18.0'
         url = f"{base_url}/{page_id}/posts"
         params = {
             'access_token': token,
@@ -2071,6 +2100,10 @@ def api_meta_report_content_insights():
                 p['shares_count'] = shares_count
                 p['comments_count'] = comments_count
                 p['reactions_count'] = reactions_count
+                
+                # Enhanced content type detection
+                p['content_format'] = detect_content_format(p)
+                
                 detailed_posts.append(p)
             except Exception:
                 detailed_posts.append(p)
@@ -2083,18 +2116,54 @@ def api_meta_report_content_insights():
                 pass
         ai = chatbot.analyze_posts_content(posts if isinstance(posts, list) else [])
 
+        # Calculate content types summary
+        content_types = {}
+        for post in posts:
+            content_format = post.get('content_format', '📄 Unknown')
+            content_types[content_format] = content_types.get(content_format, 0) + 1
+
         return jsonify({
             'page_id': page_id,
             'count': len(posts),
             'since': since or None,
             'until': until or None,
             'posts': posts,
+            'content_types': content_types,
             'ai': ai,
             'extraction_date': datetime.now().isoformat()
         })
     except Exception as e:
         logger.error(f"Lỗi /api/meta-report-content-insights: {e}")
         return jsonify({'error': str(e), 'posts': []}), 500
+
+def detect_content_format(post):
+    """
+    Detect and format content type from Facebook post data
+    """
+    # Check for specific patterns in message or permalink
+    message = (post.get('message', '') or '').lower()
+    permalink = (post.get('permalink_url', '') or '').lower()
+    
+    # Pattern-based detection
+    if 'reels' in permalink or 'reel' in message:
+        return '🎬 Reels'
+    elif 'live' in message or 'trực tiếp' in message:
+        return '📹 Video trực tiếp'
+    elif 'album' in message or 'nhiều hình' in message or 'album' in message:
+        return '🖼️ Album'
+    elif 'video' in message:
+        return '🎥 Video'
+    elif 'hình' in message or 'ảnh' in message or 'pic' in message:
+        return '📷 Hình ảnh'
+    elif 'link' in message or 'http' in message:
+        return '🔗 Link'
+    elif 'event' in message or 'sự kiện' in message:
+        return '📅 Sự kiện'
+    elif 'offer' in message or 'ưu đãi' in message:
+        return '🎁 Ưu đãi'
+    
+    # Default fallback
+    return '💬 Bài viết'
 
 def extract_brand_from_campaign_name(campaign_name):
     """Extract brand name from campaign name"""
