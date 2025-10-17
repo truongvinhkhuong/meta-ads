@@ -613,7 +613,21 @@ function updateTopContentSection(sectionType, posts, metric) {
         return;
     }
     
-    const top5 = posts.slice(0, 5);
+    // Compute metric per post and sort desc
+    const postsWithMetric = (posts || []).map(p => {
+        let metricValue = 0;
+        if (metric === 'impressions') {
+            metricValue = p.impressions || 0; // not available from content API, stays 0
+        } else if (metric === 'engagement') {
+            metricValue = (p.reactions_count || 0) + (p.comments_count || 0) + (p.shares_count || 0);
+        } else if (metric === 'clicks') {
+            // Fallback to shares as proxy if clicks not available
+            metricValue = p.clicks != null ? p.clicks : (p.shares_count || 0);
+        }
+        return { ...p, __metricValue: metricValue };
+    }).sort((a, b) => (b.__metricValue || 0) - (a.__metricValue || 0));
+
+    const top5 = postsWithMetric.slice(0, 5);
     const container = section.querySelector('.space-y-2');
     if (!container) {
         console.warn(`❌ Container with class "space-y-2" not found in section ${sectionType}`);
@@ -641,14 +655,7 @@ function updateTopContentSection(sectionType, posts, metric) {
             `<div class="w-8 h-8 bg-gray-100 rounded-full"></div>`;
 
         // Calculate metric value based on available data
-        let metricValue = 0;
-        if (metric === 'impressions') {
-            metricValue = post.impressions || 0;
-        } else if (metric === 'engagement') {
-            metricValue = (post.reactions_count || 0) + (post.comments_count || 0) + (post.shares_count || 0);
-        } else if (metric === 'clicks') {
-            metricValue = post.clicks || 0;
-        }
+        let metricValue = post.__metricValue || 0;
 
         item.innerHTML = `
             <div class="content-rank">${index + 1}</div>
@@ -681,21 +688,11 @@ function updateTopContentSection(sectionType, posts, metric) {
         container.appendChild(item);
     });
     
-    // Add total
-    const total = top5.reduce((sum, post) => {
-        let metricValue = 0;
-        if (metric === 'impressions') {
-            metricValue = post.impressions || 0;
-        } else if (metric === 'engagement') {
-            metricValue = (post.reactions_count || 0) + (post.comments_count || 0) + (post.shares_count || 0);
-        } else if (metric === 'clicks') {
-            metricValue = post.clicks || 0;
-        }
-        return sum + metricValue;
-    }, 0);
+    // Add total or empty state
+    const total = top5.reduce((sum, post) => sum + (post.__metricValue || 0), 0);
     const totalDiv = document.createElement('div');
     totalDiv.className = 'bg-gray-50 p-2 rounded text-sm font-semibold';
-    totalDiv.textContent = `Total: ${formatNumber(total)}`;
+    totalDiv.textContent = total > 0 ? `Total: ${formatNumber(total)}` : 'Không có dữ liệu';
     container.appendChild(totalDiv);
 }
 
