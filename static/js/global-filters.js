@@ -59,8 +59,16 @@ class GlobalFilters {
             // reset dependent selections
             this.filters.adset = 'all';
             this.filters.ad = 'all';
+            
+            console.log('Campaign changed to:', this.filters.campaign);
+            
             // fetch adsets for selected campaign, then update options
             this.loadAdsetsAndAds().then(() => {
+                this.updateAdsetOptions();
+                this.updateAdOptions();
+                this.notifyChange();
+            }).catch(error => {
+                console.error('Error loading adsets after campaign change:', error);
                 this.updateAdsetOptions();
                 this.updateAdOptions();
                 this.notifyChange();
@@ -71,8 +79,15 @@ class GlobalFilters {
             this.filters.adset = e.target.value;
             // reset ad selection
             this.filters.ad = 'all';
+            
+            console.log('Adset changed to:', this.filters.adset);
+            
             // fetch ads for selected adset, then update options
             this.loadAdsetsAndAds().then(() => {
+                this.updateAdOptions();
+                this.notifyChange();
+            }).catch(error => {
+                console.error('Error loading ads after adset change:', error);
                 this.updateAdOptions();
                 this.notifyChange();
             });
@@ -95,14 +110,22 @@ class GlobalFilters {
     
     async loadInitialData() {
         try {
+            console.log('Loading initial data...');
+            
             // Load campaigns data
             const response = await fetch('/api/ads-data');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
             const data = await response.json();
+            console.log('Campaigns data loaded:', data);
             
             if (data.campaigns) {
                 this.data.campaigns = data.campaigns;
                 this.extractBrands();
                 this.populateFilterOptions();
+                console.log('Filter options populated');
             }
             
             // Load additional data if needed
@@ -145,29 +168,72 @@ class GlobalFilters {
             if (!selectedCampaignId) {
                 this.data.adsets = [];
                 this.data.ads = [];
+                console.log('No campaign selected, clearing adsets and ads');
                 return;
             }
+            
+            console.log('Loading adsets for campaign:', selectedCampaignId);
+            
+            // Add loading state
+            this.setLoadingState('adset', true);
+            
             // Load adsets for selected campaign
             const adsetsRes = await fetch(`/api/campaign-adsets?campaign_id=${encodeURIComponent(selectedCampaignId)}`);
+            if (!adsetsRes.ok) {
+                throw new Error(`HTTP ${adsetsRes.status}: ${adsetsRes.statusText}`);
+            }
+            
             const adsetsJson = await adsetsRes.json();
-            this.data.adsets = Array.isArray(adsetsJson.items) ? adsetsJson.items : [];
+            console.log('Adsets response:', adsetsJson);
+            
+            if (adsetsJson.error) {
+                console.error('Error in adsets response:', adsetsJson.error);
+                this.data.adsets = [];
+            } else {
+                this.data.adsets = Array.isArray(adsetsJson.items) ? adsetsJson.items : [];
+            }
+            
+            // Remove loading state
+            this.setLoadingState('adset', false);
+            
             // If adset is selected, load ads for that adset
             if (this.filters.adset && this.filters.adset !== 'all') {
+                console.log('Loading ads for adset:', this.filters.adset);
+                
+                // Add loading state
+                this.setLoadingState('ad', true);
+                
                 const adsRes = await fetch(`/api/adset-ads?adset_id=${encodeURIComponent(this.filters.adset)}`);
+                if (!adsRes.ok) {
+                    throw new Error(`HTTP ${adsRes.status}: ${adsRes.statusText}`);
+                }
+                
                 const adsJson = await adsRes.json();
-                // Normalize to flat structure id/name
-                this.data.ads = Array.isArray(adsJson.items) ? adsJson.items.map(x => ({
-                    id: x.ad?.id || x.id,
-                    name: x.ad?.name || x.name,
-                    adset_id: this.filters.adset
-                })) : [];
+                console.log('Ads response:', adsJson);
+                
+                if (adsJson.error) {
+                    console.error('Error in ads response:', adsJson.error);
+                    this.data.ads = [];
+                } else {
+                    // Normalize to flat structure id/name
+                    this.data.ads = Array.isArray(adsJson.items) ? adsJson.items.map(x => ({
+                        id: x.ad?.id || x.id,
+                        name: x.ad?.name || x.name,
+                        adset_id: this.filters.adset
+                    })) : [];
+                }
+                
+                // Remove loading state
+                this.setLoadingState('ad', false);
             } else {
                 this.data.ads = [];
             }
         } catch (e) {
-            console.warn('Failed to load adsets/ads', e);
+            console.error('Failed to load adsets/ads', e);
             this.data.adsets = [];
             this.data.ads = [];
+            this.setLoadingState('adset', false);
+            this.setLoadingState('ad', false);
         }
     }
     
@@ -214,27 +280,43 @@ class GlobalFilters {
     populateAdsetOptions() {
         const select = document.getElementById('filter-adset');
         select.innerHTML = '<option value="all" selected>Tất cả Nhóm QC</option>';
+        
         // Use loaded adsets filtered by selected campaign
         const adsets = (this.data.adsets || []).filter(a => a.campaign_id === this.filters.campaign);
+        console.log('Populating adset options with:', adsets);
+        
         adsets.forEach(as => {
             const option = document.createElement('option');
             option.value = as.id;
             option.textContent = as.name || as.id;
             select.appendChild(option);
         });
+        
+        // Update the select value if adset is already selected
+        if (this.filters.adset !== 'all') {
+            select.value = this.filters.adset;
+        }
     }
     
     populateAdOptions() {
         const select = document.getElementById('filter-ad');
         select.innerHTML = '<option value="all" selected>Tất cả Quảng Cáo</option>';
+        
         // Use loaded ads tied to selected adset
         const ads = (this.data.ads || []);
+        console.log('Populating ad options with:', ads);
+        
         ads.forEach(ad => {
             const option = document.createElement('option');
             option.value = ad.id;
             option.textContent = ad.name || ad.id;
             select.appendChild(option);
         });
+        
+        // Update the select value if ad is already selected
+        if (this.filters.ad !== 'all') {
+            select.value = this.filters.ad;
+        }
     }
     
     updateCampaignOptions() {
@@ -364,6 +446,8 @@ class GlobalFilters {
     }
     
     resetFilters() {
+        console.log('Resetting filters...');
+        
         this.filters = {
             datePreset: 'last_30d',
             dateFrom: null,
@@ -373,6 +457,10 @@ class GlobalFilters {
             adset: 'all',
             ad: 'all'
         };
+        
+        // Clear adsets and ads data
+        this.data.adsets = [];
+        this.data.ads = [];
         
         // Reset UI
         document.getElementById('filter-date-preset').value = 'last_30d';
@@ -386,6 +474,8 @@ class GlobalFilters {
         this.populateFilterOptions();
         this.notifyChange();
         this.updateFilterStatus();
+        
+        console.log('Filters reset completed');
     }
     
     updateFilterStatus() {
@@ -404,9 +494,24 @@ class GlobalFilters {
     }
     
     getFilteredDataCount() {
-        // This would calculate the actual count based on current filters
-        // For now, return a placeholder
-        return this.data.campaigns.length;
+        // Calculate the actual count based on current filters
+        let filteredCampaigns = this.data.campaigns || [];
+        
+        // Apply brand filter
+        if (this.filters.brand !== 'all') {
+            filteredCampaigns = filteredCampaigns.filter(campaign => 
+                this.extractBrandFromCampaignName(campaign.campaign_name) === this.filters.brand
+            );
+        }
+        
+        // Apply campaign filter
+        if (this.filters.campaign !== 'all') {
+            filteredCampaigns = filteredCampaigns.filter(campaign => 
+                campaign.campaign_id === this.filters.campaign
+            );
+        }
+        
+        return filteredCampaigns.length;
     }
     
     // Register callback for when filters change
@@ -430,6 +535,20 @@ class GlobalFilters {
             ...this.filters,
             params: this.getFilterParams()
         };
+    }
+    
+    // Set loading state for filter dropdowns
+    setLoadingState(filterType, isLoading) {
+        const selectElement = document.getElementById(`filter-${filterType}`);
+        if (selectElement) {
+            if (isLoading) {
+                selectElement.classList.add('filter-loading');
+                selectElement.disabled = true;
+            } else {
+                selectElement.classList.remove('filter-loading');
+                selectElement.disabled = false;
+            }
+        }
     }
 }
 

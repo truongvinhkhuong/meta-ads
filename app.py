@@ -7,7 +7,7 @@ import hashlib
 import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 
 from dotenv import load_dotenv
 import requests
@@ -554,6 +554,10 @@ def load_ads_data() -> Dict[str, Any]:
 @app.route('/')
 def index():
     return render_template('index_new.html')
+
+@app.route('/test_filters.html')
+def test_filters():
+    return send_file('test_filters.html')
 
 @app.route('/old')
 def index_old():
