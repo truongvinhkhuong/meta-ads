@@ -1512,6 +1512,14 @@ function updateMetaReportSummaryCards(data) {
     
     const avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
     
+    // Ensure formatters are available
+    if (typeof window.VND_FMT === 'undefined') {
+        window.VND_FMT = new Intl.NumberFormat('vi-VN',{ style:'currency', currency:'VND', maximumFractionDigits:0 });
+    }
+    if (typeof window.NUM_FMT === 'undefined') {
+        window.NUM_FMT = new Intl.NumberFormat('vi-VN');
+    }
+    
     // Update summary cards
     const elements = {
         'meta-total-brands': totalBrands,

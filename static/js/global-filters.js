@@ -72,6 +72,7 @@ class GlobalFilters {
                 this.updateAdsetOptions();
                 this.updateAdOptions();
                 this.notifyChange();
+                // Continue execution even if there's an error
             });
         });
         
@@ -90,6 +91,7 @@ class GlobalFilters {
                 console.error('Error loading ads after adset change:', error);
                 this.updateAdOptions();
                 this.notifyChange();
+                // Continue execution even if there's an error
             });
         });
         
@@ -188,7 +190,16 @@ class GlobalFilters {
             
             if (adsetsJson.error) {
                 console.error('Error in adsets response:', adsetsJson.error);
+                
+                // Check if it's a rate limit error
+                if (adsetsJson.error.code === 17 || adsetsJson.error.message?.includes('request limit')) {
+                    console.warn('Facebook API rate limit reached. Please wait before making more requests.');
+                    // Show user-friendly message
+                    this.showApiLimitMessage('adsets');
+                }
+                
                 this.data.adsets = [];
+                // Don't throw error, just log and continue with empty array
             } else {
                 this.data.adsets = Array.isArray(adsetsJson.items) ? adsetsJson.items : [];
             }
@@ -213,7 +224,16 @@ class GlobalFilters {
                 
                 if (adsJson.error) {
                     console.error('Error in ads response:', adsJson.error);
+                    
+                    // Check if it's a rate limit error
+                    if (adsJson.error.code === 17 || adsJson.error.message?.includes('request limit')) {
+                        console.warn('Facebook API rate limit reached. Please wait before making more requests.');
+                        // Show user-friendly message
+                        this.showApiLimitMessage('ads');
+                    }
+                    
                     this.data.ads = [];
+                    // Don't throw error, just log and continue with empty array
                 } else {
                     // Normalize to flat structure id/name
                     this.data.ads = Array.isArray(adsJson.items) ? adsJson.items.map(x => ({
@@ -234,6 +254,7 @@ class GlobalFilters {
             this.data.ads = [];
             this.setLoadingState('adset', false);
             this.setLoadingState('ad', false);
+            // Don't throw the error to prevent breaking the UI
         }
     }
     
@@ -281,8 +302,8 @@ class GlobalFilters {
         const select = document.getElementById('filter-adset');
         select.innerHTML = '<option value="all" selected>Tất cả Nhóm QC</option>';
         
-        // Use loaded adsets filtered by selected campaign
-        const adsets = (this.data.adsets || []).filter(a => a.campaign_id === this.filters.campaign);
+        // Use loaded adsets (API already returns adsets for the selected campaign)
+        const adsets = this.data.adsets || [];
         console.log('Populating adset options with:', adsets);
         
         adsets.forEach(as => {
@@ -321,26 +342,28 @@ class GlobalFilters {
     
     updateCampaignOptions() {
         this.populateCampaignOptions();
-        // Reset dependent filters
-        this.filters.campaign = 'all';
-        this.filters.adset = 'all';
-        this.filters.ad = 'all';
-        this.updateAdsetOptions();
-        this.updateAdOptions();
+        // Reset dependent filters only if campaign filter is not already set
+        if (this.filters.campaign === 'all') {
+            this.filters.adset = 'all';
+            this.filters.ad = 'all';
+            this.updateAdsetOptions();
+            this.updateAdOptions();
+        }
     }
     
     updateAdsetOptions() {
         this.populateAdsetOptions();
-        // Reset dependent filters
-        this.filters.adset = 'all';
-        this.filters.ad = 'all';
-        this.updateAdOptions();
+        // Reset dependent filters only if adset filter is not already set
+        if (this.filters.adset === 'all') {
+            this.filters.ad = 'all';
+            this.updateAdOptions();
+        }
     }
     
     updateAdOptions() {
         this.populateAdOptions();
-        // Reset dependent filters
-        this.filters.ad = 'all';
+        // Don't reset ad filter if it's already set
+        // The ad filter will be reset by the calling function if needed
     }
     
     handleDatePresetChange(preset) {
@@ -550,6 +573,72 @@ class GlobalFilters {
             }
         }
     }
+    
+    // Public method to get current adsets data
+    getAdsetsData() {
+        return this.data.adsets || [];
+    }
+    
+    // Public method to get current ads data
+    getAdsData() {
+        return this.data.ads || [];
+    }
+    
+    // Public method to get current campaigns data
+    getCampaignsData() {
+        return this.data.campaigns || [];
+    }
+    
+    // Public method to get current brands data
+    getBrandsData() {
+        return this.data.brands || [];
+    }
+    
+    // Public method to get all filter data
+    getAllFilterData() {
+        return {
+            campaigns: this.getCampaignsData(),
+            adsets: this.getAdsetsData(),
+            ads: this.getAdsData(),
+            brands: this.getBrandsData(),
+            currentFilters: this.getCurrentFilters()
+        };
+    }
+    
+    // Public method to refresh adsets and ads data for current campaign
+    async refreshAdsetsAndAdsData() {
+        console.log('Refreshing adsets and ads data...');
+        await this.loadAdsetsAndAds();
+        this.populateAdsetOptions();
+        this.populateAdOptions();
+        console.log('Adsets and ads data refreshed');
+    }
+    
+    // Show API limit message to user
+    showApiLimitMessage(dataType) {
+        // Create a temporary notification
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 right-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded z-50';
+        notification.innerHTML = `
+            <div class="flex items-center">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                </svg>
+                <span class="text-sm">
+                    <strong>Facebook API Limit:</strong> Quá nhiều lệnh gọi API. Vui lòng chờ một chút trước khi thử lại.
+                </span>
+            </div>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Remove notification after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 5000);
+    }
 }
 
 // Initialize global filters when DOM is loaded
@@ -560,7 +649,52 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Make it available globally
     window.globalFilters = globalFilters;
+    
+    // Add helper functions to window for easy access
+    window.getGlobalFilterData = () => {
+        if (globalFilters) {
+            return globalFilters.getAllFilterData();
+        }
+        return null;
+    };
+    
+    window.getAdsetsData = () => {
+        if (globalFilters) {
+            return globalFilters.getAdsetsData();
+        }
+        return [];
+    };
+    
+    window.getAdsData = () => {
+        if (globalFilters) {
+            return globalFilters.getAdsData();
+        }
+        return [];
+    };
+    
+    window.getCampaignsData = () => {
+        if (globalFilters) {
+            return globalFilters.getCampaignsData();
+        }
+        return [];
+    };
+    
+    window.getBrandsData = () => {
+        if (globalFilters) {
+            return globalFilters.getBrandsData();
+        }
+        return [];
+    };
+    
+    window.refreshGlobalFilterData = async () => {
+        if (globalFilters) {
+            await globalFilters.refreshAdsetsAndAdsData();
+        }
+    };
+    
     // Trigger initial apply so all sections receive default filters
     try { globalFilters.applyFilters(); } catch (e) { console.warn('Initial filter apply failed', e); }
+    
+    console.log('Global Filters initialized and helper functions available');
 });
 

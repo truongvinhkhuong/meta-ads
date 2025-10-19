@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Filters Data Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-8">Demo: Lấy dữ liệu từ Global Filters Component</h1>
+        
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Cách lấy dữ liệu từ Global Filters</h2>
+            
+            <div class="space-y-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-blue-800 mb-2">1. Lấy tất cả dữ liệu filter:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>const allData = window.getGlobalFilterData();
+console.log(allData);</code></pre>
+                </div>
+                
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-green-800 mb-2">2. Lấy dữ liệu adsets:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>const adsets = window.getAdsetsData();
+console.log('Adsets:', adsets);</code></pre>
+                </div>
+                
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-purple-800 mb-2">3. Lấy dữ liệu ads:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>const ads = window.getAdsData();
+console.log('Ads:', ads);</code></pre>
+                </div>
+                
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-yellow-800 mb-2">4. Lấy dữ liệu campaigns:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>const campaigns = window.getCampaignsData();
+console.log('Campaigns:', campaigns);</code></pre>
+                </div>
+                
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-red-800 mb-2">5. Lấy dữ liệu brands:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>const brands = window.getBrandsData();
+console.log('Brands:', brands);</code></pre>
+                </div>
+                
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-gray-800 mb-2">6. Refresh dữ liệu adsets và ads:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>await window.refreshGlobalFilterData();
+console.log('Data refreshed');</code></pre>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Test Live Data</h2>
+            <div class="space-y-4">
+                <button id="test-btn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Test Lấy Dữ Liệu
+                </button>
+                <div id="results" class="bg-gray-100 p-4 rounded-lg min-h-32">
+                    <p class="text-gray-600">Click button để test lấy dữ liệu từ Global Filters...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Cách sử dụng trong code khác</h2>
+            <div class="space-y-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-blue-800 mb-2">Trong JavaScript:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>// Lấy dữ liệu adsets hiện tại
+const adsets = window.getAdsetsData();
+
+// Lấy dữ liệu ads hiện tại  
+const ads = window.getAdsData();
+
+// Lấy tất cả dữ liệu
+const allData = window.getGlobalFilterData();
+
+// Refresh dữ liệu khi cần
+await window.refreshGlobalFilterData();</code></pre>
+                </div>
+                
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <h3 class="font-semibold text-green-800 mb-2">Trong event listener:</h3>
+                    <pre class="bg-white p-3 rounded border text-sm"><code>// Lắng nghe thay đổi filter
+window.globalFilters.onFilterChange((params, filters) => {
+    const adsets = window.getAdsetsData();
+    const ads = window.getAdsData();
+    console.log('Filter changed:', { adsets, ads, params, filters });
+});</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('test-btn').addEventListener('click', async () => {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p class="text-blue-600">Đang test lấy dữ liệu...</p>';
+            
+            try {
+                // Test các function helper
+                const allData = window.getGlobalFilterData();
+                const adsets = window.getAdsetsData();
+                const ads = window.getAdsData();
+                const campaigns = window.getCampaignsData();
+                const brands = window.getBrandsData();
+                
+                let html = '<div class="space-y-2">';
+                html += `<p><strong>Tổng campaigns:</strong> ${campaigns.length}</p>`;
+                html += `<p><strong>Tổng adsets:</strong> ${adsets.length}</p>`;
+                html += `<p><strong>Tổng ads:</strong> ${ads.length}</p>`;
+                html += `<p><strong>Brands:</strong> ${brands.join(', ')}</p>`;
+                
+                if (adsets.length > 0) {
+                    html += '<p><strong>Adsets hiện tại:</strong></p><ul class="list-disc ml-6">';
+                    adsets.forEach(adset => {
+                        html += `<li>${adset.name} (ID: ${adset.id})</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                if (ads.length > 0) {
+                    html += '<p><strong>Ads hiện tại:</strong></p><ul class="list-disc ml-6">';
+                    ads.forEach(ad => {
+                        const adInfo = ad.ad || ad;
+                        html += `<li>${adInfo.name} (ID: ${adInfo.id})</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                html += '</div>';
+                resultsDiv.innerHTML = html;
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="text-red-600">Lỗi: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
